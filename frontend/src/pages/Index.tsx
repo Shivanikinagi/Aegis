@@ -70,6 +70,7 @@ const Index = () => {
   const [treasuryDetails, setTreasuryDetails] = useState<any>(null);
   const [tasksList, setTasksList] = useState<any[]>([]);
   const [workersList, setWorkersList] = useState<any[]>([]);
+  const [learningStats, setLearningStats] = useState<any>(null);
 
   const fetchData = async () => {
     setIsRefreshing(true);
@@ -112,6 +113,12 @@ const Index = () => {
         setWorkersList(workersData.workers); // Store full worker list
         console.log('Set workers - count:', workersData.workers.length);
       }
+      
+      // Fetch learning stats
+      const learningResponse = await fetch('http://localhost:8000/api/learning');
+      const learningData = await learningResponse.json();
+      console.log('Learning data:', learningData);
+      setLearningStats(learningData);
       
       setConnected(true);
       setBlockNumber(19);
@@ -211,6 +218,7 @@ const Index = () => {
             <TabsTrigger value="treasury">Treasury</TabsTrigger>
             <TabsTrigger value="tasks">Tasks</TabsTrigger>
             <TabsTrigger value="agents">Agents</TabsTrigger>
+            <TabsTrigger value="learning">Learning</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-4">
@@ -400,6 +408,133 @@ const Index = () => {
                     </div>
                   ) : (
                     <p className="text-muted-foreground">No workers registered yet.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="learning">
+            <div className="grid gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Learning & Improvement</CardTitle>
+                  <CardDescription>Agent learning metrics and performance improvement over time</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {learningStats ? (
+                    <div className="space-y-6">
+                      {/* Status Banner */}
+                      {learningStats.status === 'learning' && learningStats.improvements && (
+                        <div className="p-4 rounded-lg border-2 border-green-500/30 bg-green-500/10">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Brain className="w-5 h-5 text-green-500" />
+                            <h3 className="font-semibold text-green-500">Agent is Learning!</h3>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{learningStats.message}</p>
+                        </div>
+                      )}
+
+                      {learningStats.status === 'insufficient_data' && (
+                        <div className="p-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
+                          <p className="text-sm text-yellow-500">{learningStats.message}</p>
+                        </div>
+                      )}
+
+                      {/* Performance Comparison */}
+                      {learningStats.early_period && learningStats.recent_period && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="p-4 rounded-lg border border-border/50 bg-card/50">
+                            <h3 className="font-semibold mb-3 text-gray-400">Early Performance</h3>
+                            <div className="space-y-2">
+                              <div className="flex justify-between">
+                                <span className="text-sm text-muted-foreground">Tasks</span>
+                                <span className="font-medium">{learningStats.early_period.tasks}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-sm text-muted-foreground">Success Rate</span>
+                                <span className="font-medium">{formatPercent(learningStats.early_period.success_rate)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-sm text-muted-foreground">Avg Cost</span>
+                                <span className="font-medium">{formatMON(learningStats.early_period.avg_cost, 2)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 rounded-lg border border-green-500/30 bg-green-500/10">
+                            <h3 className="font-semibold mb-3 text-green-500">Recent Performance</h3>
+                            <div className="space-y-2">
+                              <div className="flex justify-between">
+                                <span className="text-sm text-muted-foreground">Tasks</span>
+                                <span className="font-medium">{learningStats.recent_period.tasks}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-sm text-muted-foreground">Success Rate</span>
+                                <span className="font-medium text-green-400">{formatPercent(learningStats.recent_period.success_rate)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-sm text-muted-foreground">Avg Cost</span>
+                                <span className="font-medium text-green-400">{formatMON(learningStats.recent_period.avg_cost, 2)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Improvement Metrics */}
+                      {learningStats.improvements && (
+                        <div className="p-4 rounded-lg border border-border/50 bg-card/50">
+                          <h3 className="font-semibold mb-4">Improvement Metrics</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                              <p className="text-sm text-muted-foreground mb-1">Success Rate Change</p>
+                              <p className={`text-2xl font-bold ${learningStats.improvements.success_rate_change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {learningStats.improvements.success_rate_change >= 0 ? '+' : ''}{learningStats.improvements.success_rate_change.toFixed(1)}%
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-muted-foreground mb-1">Cost Reduction</p>
+                              <p className={`text-2xl font-bold ${learningStats.improvements.cost_reduction >= 0 ? 'text-green-500' : 'text-orange-500'}`}>
+                                {learningStats.improvements.cost_reduction >= 0 ? '-' : '+'}{Math.abs(learningStats.improvements.cost_reduction).toFixed(1)}%
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-muted-foreground mb-1">Decision Quality</p>
+                              <p className="text-2xl font-bold text-purple-500">
+                                {(learningStats.improvements.decision_quality * 100).toFixed(0)}%
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Agent Status */}
+                      {learningStats.agent_status && (
+                        <div className="p-4 rounded-lg border border-border/50 bg-card/50">
+                          <h3 className="font-semibold mb-3">Agent Status</h3>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-sm text-muted-foreground">Running</p>
+                              <p className="font-medium">{learningStats.agent_status.running ? 'Yes ✓' : 'No'}</p>
+                            </div>
+                            {learningStats.agent_status.cycle_count !== undefined && (
+                              <div>
+                                <p className="text-sm text-muted-foreground">Cycles</p>
+                                <p className="font-medium">{learningStats.agent_status.cycle_count}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Total Tasks Analyzed */}
+                      <div className="text-center text-sm text-muted-foreground">
+                        Analysis based on {learningStats.total_tasks_analyzed || 0} total tasks
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">Loading learning stats...</p>
                   )}
                 </CardContent>
               </Card>

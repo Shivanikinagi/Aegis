@@ -4,6 +4,7 @@ Provides REST endpoints for the frontend dashboard.
 """
 
 import asyncio
+import time
 from typing import Dict, Optional
 from dataclasses import asdict
 import json
@@ -267,18 +268,34 @@ class APIServer:
         return web.json_response(metrics)
     
     async def get_learning_stats(self, request: web.Request) -> web.Response:
-        """Get learning algorithm statistics."""
+        """Get learning algorithm statistics and improvement metrics."""
+        # Get learning insights from memory
+        insights = self.memory.get_learning_insights()
+        
+        # Add agent-specific stats if agent is running
         if self.agent:
-            stats = self.agent.learner.get_learning_stats()
-            stats["running"] = self.agent.running
-            stats["cycleCount"] = self.agent.cycle_count
+            insights["agent_status"] = {
+                "running": self.agent.running,
+                "cycle_count": getattr(self.agent, 'cycle_count', 0),
+                "uptime_seconds": time.time() - getattr(self.agent, 'start_time', time.time())
+            }
+            
+            # Get worker selection stats from learner
+            if hasattr(self.agent, 'learner'):
+                learner = self.agent.learner
+                if hasattr(learner, 'bandit'):
+                    insights["worker_selection"] = {
+                        "total_pulls": learner.bandit.total_pulls,
+                        "exploration_rate": learner.bandit.exploration_constant,
+                        "worker_pull_counts": learner.bandit.worker_pulls
+                    }
         else:
-            stats = {
+            insights["agent_status"] = {
                 "running": False,
-                "message": "Agent not running - no learning stats available"
+                "message": "Agent not currently active"
             }
         
-        return web.json_response(stats)
+        return web.json_response(insights)
     
     def run(self, host: str = None, port: int = None):
         """Run the API server."""

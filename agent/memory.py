@@ -102,6 +102,12 @@ class StrategyMetrics:
     average_cost_per_success: float = 0.0
     roi: float = 0.0  # Return on investment (value / cost)
     
+    # Learning improvement metrics
+    recent_success_rate: float = 0.0  # Last 10 tasks
+    historical_success_rate: float = 0.0  # Overall
+    cost_efficiency_trend: List[float] = field(default_factory=list)  # Cost per success over time
+    decision_quality_score: float = 0.0  # 0-1 scale
+    
     def update(self, success: bool, cost: float, value: float = 0):
         """Update strategy metrics."""
         self.total_decisions += 1
@@ -116,9 +122,23 @@ class StrategyMetrics:
         # Calculate averages
         if self.successful_allocations > 0:
             self.average_cost_per_success = self.total_spent / self.successful_allocations
+            
+            # Track cost efficiency trend
+            self.cost_efficiency_trend.append(self.average_cost_per_success)
+            if len(self.cost_efficiency_trend) > 50:  # Keep last 50
+                self.cost_efficiency_trend.pop(0)
         
         if self.total_spent > 0:
             self.roi = self.total_value_delivered / self.total_spent
+        
+        # Calculate overall success rate
+        if self.total_decisions > 0:
+            self.historical_success_rate = self.successful_allocations / self.total_decisions
+        
+        # Calculate decision quality (combines success rate and cost efficiency)
+        success_factor = self.historical_success_rate
+        efficiency_factor = min(1.0, self.roi / 2.0) if self.roi > 0 else 0
+        self.decision_quality_score = 0.6 * success_factor + 0.4 * efficiency_factor
 
 
 class AgentMemory:
@@ -228,9 +248,24 @@ class AgentMemory:
     
     def get_metrics_summary(self) -> Dict:
         """Get a summary of current metrics."""
+        # Calculate recent performance (last 20 tasks)
+        recent_tasks = list(self.tasks.values())[-20:]
+        recent_successes = sum(1 for t in recent_tasks if t.outcome == "success")
+        recent_success_rate = recent_successes / len(recent_tasks) if recent_tasks else 0
+        
+        # Calculate improvement trend
+        if len(self.strategy_metrics.cost_efficiency_trend) >= 10:
+            early_avg = sum(self.strategy_metrics.cost_efficiency_trend[:5]) / 5
+            recent_avg = sum(self.strategy_metrics.cost_efficiency_trend[-5:]) / 5
+            improvement = ((early_avg - recent_avg) / early_avg * 100) if early_avg > 0 else 0
+        else:
+            improvement = 0
+        
         return {
             "total_workers": len(self.workers),
             "total_tasks": len(self.tasks),
+            "recent_success_rate": recent_success_rate,
+            "improvement_percentage": improvement,
             "strategy": asdict(self.strategy_metrics),
             "top_workers": [
                 {
@@ -245,6 +280,56 @@ class AgentMemory:
                     reverse=True
                 )[:5]
             ]
+        }
+    
+    def get_learning_insights(self) -> Dict:
+        """Get insights about agent learning and improvement."""
+        tasks_list = list(self.tasks.values())
+        
+        if len(tasks_list) < 5:
+            return {
+                "status": "insufficient_data",
+                "message": "Need at least 5 tasks to show learning trends",
+                "total_tasks": len(tasks_list)
+            }
+        
+        # Split into early and recent periods
+        split_point = len(tasks_list) // 2
+        early_tasks = tasks_list[:split_point]
+        recent_tasks = tasks_list[split_point:]
+        
+        # Calculate metrics for each period
+        early_success = sum(1 for t in early_tasks if t.outcome == "success")
+        recent_success = sum(1 for t in recent_tasks if t.outcome == "success")
+        
+        early_success_rate = early_success / len(early_tasks)
+        recent_success_rate = recent_success / len(recent_tasks)
+        
+        early_avg_cost = sum(t.actual_payment for t in early_tasks) / len(early_tasks)
+        recent_avg_cost = sum(t.actual_payment for t in recent_tasks) / len(recent_tasks)
+        
+        success_improvement = ((recent_success_rate - early_success_rate) / early_success_rate * 100) if early_success_rate > 0 else 0
+        cost_reduction = ((early_avg_cost - recent_avg_cost) / early_avg_cost * 100) if early_avg_cost > 0 else 0
+        
+        return {
+            "status": "learning",
+            "total_tasks_analyzed": len(tasks_list),
+            "early_period": {
+                "tasks": len(early_tasks),
+                "success_rate": early_success_rate,
+                "avg_cost": early_avg_cost
+            },
+            "recent_period": {
+                "tasks": len(recent_tasks),
+                "success_rate": recent_success_rate,
+                "avg_cost": recent_avg_cost
+            },
+            "improvements": {
+                "success_rate_change": success_improvement,
+                "cost_reduction": cost_reduction,
+                "decision_quality": self.strategy_metrics.decision_quality_score
+            },
+            "message": f"Agent {'improving' if success_improvement > 0 else 'learning'}: {abs(success_improvement):.1f}% success change, {abs(cost_reduction):.1f}% cost {'reduction' if cost_reduction > 0 else 'increase'}"
         }
     
     def _save(self):
