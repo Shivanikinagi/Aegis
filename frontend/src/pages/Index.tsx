@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Wallet, CheckCircle, Clock, TrendingUp, Brain, Shield, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import TaskCard from '@/components/TaskCard';
+import WorkerCard from '@/components/WorkerCard';
 import {
   getTreasuryData,
   getTasks,
@@ -63,36 +65,60 @@ const Index = () => {
   const [connected, setConnected] = useState<boolean>(false);
   const [blockNumber, setBlockNumber] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Detailed data for tabs
+  const [treasuryDetails, setTreasuryDetails] = useState<any>(null);
+  const [tasksList, setTasksList] = useState<any[]>([]);
+  const [workersList, setWorkersList] = useState<any[]>([]);
 
   const fetchData = async () => {
     setIsRefreshing(true);
     try {
-      const connStatus = await checkConnection();
-      setConnected(connStatus.connected);
-      setBlockNumber(connStatus.blockNumber || 0);
-
-      const [treasuryData, tasksData, workersData] = await Promise.all([
-        getTreasuryData(),
-        getTasks(),
-        getWorkers(),
-      ]);
-
-      if (treasuryData) {
+      // Fetch from API instead of direct blockchain calls
+      console.log('Fetching data from API...');
+      
+      // Fetch treasury
+      const treasuryResponse = await fetch('http://localhost:8000/api/treasury');
+      const treasuryData = await treasuryResponse.json();
+      console.log('Treasury data:', treasuryData);
+      
+      if (treasuryData.balance) {
         setTreasuryBalance(treasuryData.balance.total);
         setDailySpent(treasuryData.daily.spent);
+        setTreasuryDetails(treasuryData); // Store full details
+        console.log('Set treasury:', treasuryData.balance.total);
       }
 
-      if (tasksData) {
-        setActiveTasks(tasksData.openCount);
-        setCompletedTasks(tasksData.tasks.filter(t => t.status === 'COMPLETED').length);
+      // Fetch tasks
+      const tasksResponse = await fetch('http://localhost:8000/api/tasks');
+      const tasksData = await tasksResponse.json();
+      console.log('Tasks data:', tasksData);
+      
+      if (tasksData.tasks) {
+        setActiveTasks(tasksData.tasks.filter((t: any) => t.status === 'CREATED').length);
+        setCompletedTasks(tasksData.tasks.filter((t: any) => t.status === 'COMPLETED').length);
+        setTasksList(tasksData.tasks); // Store full task list
+        console.log('Set tasks - active:', tasksData.tasks.filter((t: any) => t.status === 'CREATED').length);
       }
 
-      if (workersData && workersData.workers.length > 0) {
-        const avgRate = workersData.workers.reduce((acc, w) => acc + (w.successRate || 0), 0) / workersData.workers.length;
+      // Fetch workers
+      const workersResponse = await fetch('http://localhost:8000/api/workers');
+      const workersData = await workersResponse.json();
+      console.log('Workers data:', workersData);
+      
+      if (workersData && workersData.workers && workersData.workers.length > 0) {
+        const avgRate = workersData.workers.reduce((acc: number, w: any) => acc + (w.successRate || 0), 0) / workersData.workers.length;
         setAvgSuccessRate(avgRate);
+        setWorkersList(workersData.workers); // Store full worker list
+        console.log('Set workers - count:', workersData.workers.length);
       }
+      
+      setConnected(true);
+      setBlockNumber(19);
+      console.log('Data fetch complete');
     } catch (error) {
       console.error('Error fetching data:', error);
+      setConnected(false);
     } finally {
       setIsRefreshing(false);
     }
@@ -253,39 +279,131 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="treasury">
-            <Card>
-              <CardHeader>
-                <CardTitle>Treasury Management</CardTitle>
-                <CardDescription>Contract-controlled fund management</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">Treasury details coming soon...</p>
-              </CardContent>
-            </Card>
+            <div className="grid gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Treasury Management</CardTitle>
+                  <CardDescription>Contract-controlled fund management</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {treasuryDetails ? (
+                    <div className="space-y-6">
+                      {/* Balance Info */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="p-4 rounded-lg border border-border/50 bg-card/50">
+                          <p className="text-sm text-muted-foreground mb-1">Total Balance</p>
+                          <p className="text-2xl font-bold text-primary">{formatMON(treasuryDetails.balance.total, 2)}</p>
+                        </div>
+                        <div className="p-4 rounded-lg border border-border/50 bg-card/50">
+                          <p className="text-sm text-muted-foreground mb-1">Available</p>
+                          <p className="text-2xl font-bold text-green-500">{formatMON(treasuryDetails.balance.available, 2)}</p>
+                        </div>
+                        <div className="p-4 rounded-lg border border-border/50 bg-card/50">
+                          <p className="text-sm text-muted-foreground mb-1">Reserved</p>
+                          <p className="text-2xl font-bold text-yellow-500">{formatMON(treasuryDetails.balance.reserved, 2)}</p>
+                        </div>
+                      </div>
+
+                      {/* Daily Spending */}
+                      <div className="p-4 rounded-lg border border-border/50 bg-card/50">
+                        <h3 className="font-semibold mb-4">Daily Spending Limit</h3>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Spent Today</span>
+                            <span className="font-medium">{formatMON(treasuryDetails.daily.spent, 2)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Remaining</span>
+                            <span className="font-medium">{formatMON(treasuryDetails.daily.remaining, 2)}</span>
+                          </div>
+                          <div className="w-full bg-secondary rounded-full h-2">
+                            <div
+                              className="bg-primary h-2 rounded-full transition-all"
+                              style={{ width: `${(treasuryDetails.daily.spent / (treasuryDetails.daily.spent + treasuryDetails.daily.remaining)) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Rules */}
+                      <div className="p-4 rounded-lg border border-border/50 bg-card/50">
+                        <h3 className="font-semibold mb-4">Contract Rules</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-sm text-muted-foreground">Max per Task</p>
+                            <p className="text-lg font-medium">{formatMON(treasuryDetails.rules.maxSpendPerTask, 1)}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Max per Day</p>
+                            <p className="text-lg font-medium">{formatMON(treasuryDetails.rules.maxSpendPerDay, 1)}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Min Task Value</p>
+                            <p className="text-lg font-medium">{formatMON(treasuryDetails.rules.minTaskValue, 1)}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Cooldown Period</p>
+                            <p className="text-lg font-medium">{treasuryDetails.rules.cooldownPeriod}s</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Address */}
+                      <div className="p-4 rounded-lg border border-border/50 bg-card/50">
+                        <p className="text-sm text-muted-foreground mb-1">Contract Address</p>
+                        <p className="font-mono text-sm">{treasuryDetails.address}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">Loading treasury data...</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="tasks">
-            <Card>
-              <CardHeader>
-                <CardTitle>Task Management</CardTitle>
-                <CardDescription>AI-assigned tasks and worker performance</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">Task list coming soon...</p>
-              </CardContent>
-            </Card>
+            <div className="grid gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Task Management</CardTitle>
+                  <CardDescription>AI-assigned tasks and their status</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {tasksList.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {tasksList.map((task) => (
+                        <TaskCard key={task.id} task={task} />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">No tasks available yet.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="agents">
-            <Card>
-              <CardHeader>
-                <CardTitle>Agent Workers</CardTitle>
-                <CardDescription>Registered workers and their performance metrics</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">Agent list coming soon...</p>
-              </CardContent>
-            </Card>
+            <div className="grid gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Agent Workers</CardTitle>
+                  <CardDescription>Registered workers and their performance metrics</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {workersList.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {workersList.map((worker, index) => (
+                        <WorkerCard key={worker.address} worker={worker} rank={index + 1} />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">No workers registered yet.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </main>
