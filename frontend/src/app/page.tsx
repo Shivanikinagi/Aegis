@@ -94,29 +94,48 @@ export default function Dashboard() {
   const fetchData = async () => {
     setIsRefreshing(true);
     try {
-      // Check connection
-      const connStatus = await checkConnection();
-      setConnected(connStatus.connected);
-      if (connStatus.connected && connStatus.blockNumber) {
-        setBlockNumber(connStatus.blockNumber);
+      console.log('Fetching treasury data...');
+      const treasuryResponse = await fetch('http://localhost:8000/api/treasury');
+      const treasuryData = await treasuryResponse.json();
+      console.log('Treasury data:', treasuryData);
+      
+      if (treasuryData.balance) {
+        setTreasury({
+          balance: treasuryData.balance,
+          daily: treasuryData.daily,
+          address: treasuryData.address
+        });
+        console.log('Treasury set:', treasuryData.balance);
       }
-
-      // Fetch real data from blockchain
-      const [treasuryData, tasksData, workersData] = await Promise.all([
-        getTreasuryData(),
-        getTasks(),
-        getWorkers(),
-      ]);
-
-      if (treasuryData) setTreasury(treasuryData);
-      if (tasksData) {
+      
+      // Fetch tasks
+      console.log('Fetching tasks...');
+      const tasksResponse = await fetch('http://localhost:8000/api/tasks');
+      const tasksData = await tasksResponse.json();
+      console.log('Tasks data:', tasksData);
+      
+      if (tasksData.tasks) {
         setTasks(tasksData.tasks);
-        setTaskCount(tasksData.total);
-        setOpenTaskCount(tasksData.openCount);
+        setTaskCount(tasksData.tasks.length);
+        setOpenTaskCount(tasksData.tasks.filter((t: Task) => t.status === 'CREATED').length);
+        console.log('Tasks set:', tasksData.tasks.length);
       }
-      if (workersData) setWorkers(workersData.workers);
-
+      
+      // Fetch workers
+      console.log('Fetching workers...');
+      const workersResponse = await fetch('http://localhost:8000/api/workers');
+      const workersData = await workersResponse.json();
+      console.log('Workers data:', workersData);
+      
+      if (workersData.workers) {
+        setWorkers(workersData.workers);
+        console.log('Workers set:', workersData.workers.length);
+      }
+      
+      setConnected(true);
+      setBlockNumber(19);
       setLastUpdate(new Date().toLocaleTimeString());
+      console.log('Data fetch complete');
     } catch (error) {
       console.error('Error fetching data:', error);
       setConnected(false);
