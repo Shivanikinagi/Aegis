@@ -1,0 +1,26 @@
+{
+  "name": "treasury-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for Autonomous Treasury Agent on Monad",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:testnet": "hardhat run scripts/deploy.js --network monad-testnet",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "node": "hardhat node",
+    "clean": "hardhat clean"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@openzeppelin/contracts": "^5.0.1",
+    "dotenv": "^16.3.1",
+    "hardhat": "^2.19.4"
+  },
+  "keywords": [
+    "monad",
+    "treasury",
+    "autonomous-agent",
+    "smart-contracts"
+  ],
+  "license": "MIT"
+}

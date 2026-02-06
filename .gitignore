@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+artifacts/
+cache/
+typechain-types/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+coverage.json
+.nyc_output/
+
+# Hardhat
+cache/
+artifacts/
+
+# Agent data
+agent/data/*.json
+agent/logs/
+agent/models/
+
+# Secrets - NEVER COMMIT
+*.pem
+*.key
+private_keys/
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md
