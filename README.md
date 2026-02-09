@@ -59,91 +59,68 @@ This system demonstrates **safe AI agent autonomy** in economic coordination:
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Local Development)
 
-### Prerequisites
+Run the entire system locally with these steps. You will need **4 separate terminals**.
 
-- Node.js 18+ and npm
-- Python 3.11+
-- A wallet with MON testnet tokens
-
-### 1. Clone and Setup
-
-```bash
-git clone <your-repo-url>
-cd "Autonomous Treasury Agent"
-
-# Copy environment file
-cp .env.example .env
-```
-
-### 2. Get Testnet Tokens
-
-1. Visit **https://testnet.monad.xyz** (official faucet)
-2. Connect your wallet
-3. Request MON tokens (you'll need ~5 MON for deployment and testing)
-
-### 3. Configure Environment
-
-Edit `.env` and add your private key:
-
-```env
-# WARNING: Use testnet wallet only!
-DEPLOYER_PRIVATE_KEY=your_testnet_private_key_here
-COORDINATOR_PRIVATE_KEY=your_coordinator_private_key_here
-```
-
-### 4. Deploy Smart Contracts
-
+### 1. Start Local Blockchain
+**Terminal 1:**
 ```bash
 cd contracts
-npm install
-npx hardhat run scripts/deploy.js --network monad-testnet
+npx hardhat node
 ```
 
-After deployment, update `.env` with the contract addresses:
+### 2. Deploy Contracts & Setup Data
+**Terminal 2:**
+```bash
+cd contracts
+# Deploy contracts
+npx hardhat run scripts/deploy.js --network localhost
 
-```env
-TREASURY_ADDRESS=0x...
-TASK_REGISTRY_ADDRESS=0x...
-WORKER_REGISTRY_ADDRESS=0x...
+# Setup demo data (workers, initial funds)
+npx hardhat run scripts/setup_demo.js --network localhost
 ```
+*Note: Copy the contract addresses output here into your `.env` file if they changed.*
 
-### 5. Start the Agent
-
+### 3. Start Unified Agent Backend
+**Terminal 2 (reused) or 3:**
 ```bash
 cd agent
+# Install dependencies
 pip install -r requirements.txt
-python coordinator.py
+
+# Run the API Server + Agent Loop
+python main.py
 ```
+*Server runs at http://localhost:8000*
 
-### 6. Launch Dashboard
+### 4. Start Ecosystem Simulator (Generates Activity)
+**Terminal 3:**
+```bash
+cd agent
+# Run the simulation script
+python simulate.py
+```
+*This simulates users creating tasks and workers submitting results.*
 
+### 5. Launch Frontend Dashboard
+**Terminal 4:**
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-
-Open **http://localhost:3000** to view the dashboard.
+*Dashboard runs at http://localhost:3000*
 
 ---
 
-## 🎮 Running the Demo (No Blockchain Needed)
-
-For hackathon demos, you can run a simulation without deploying contracts:
-
-```bash
-pip install structlog
-python scripts/demo.py
-```
-
-This simulates the full learning loop and shows:
-- Task creation and assignment
-- Agent decision-making
-- Contract rule enforcement
-- Learning progression
-- Final performance report
+## 🎮 How it Works
+1. **Simulator** creates a task on the local blockchain.
+2. **Agent** (running in `main.py`) detects the event.
+3. **Agent** selects the best worker using UCB1 logic and proposes assignment.
+4. **Simulator** (acting as worker) sees assignment and submits a result.
+5. **Agent** verifies the result and completes the task.
+6. **Frontend** updates in real-time showing the full lifecycle.
 
 ---
 
