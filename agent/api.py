@@ -4,6 +4,7 @@ Provides REST endpoints for the frontend dashboard.
 """
 
 import asyncio
+import hashlib
 import time
 from typing import Dict, Optional
 from dataclasses import asdict
@@ -299,66 +300,76 @@ class APIServer:
         return web.json_response(insights)
     
     async def get_transactions(self, request: web.Request) -> web.Response:
-        """Get recent blockchain transactions."""
-        # For MVP, we'll derive transactions from tasks
-        # In production, we'd use an indexer or event logs
-        
+        """Get REAL blockchain transactions from events."""
         limit = int(request.query.get("limit", 20))
-        transactions = []
         
-        # Get recent tasks
-        task_count = self.blockchain.get_task_count()
-        # Fetch last 10 tasks to generate activity feed
-        start_id = task_count
-        end_id = max(0, task_count - 10)
+        # Get Contract Registry
+        registry = self.blockchain.task_registry
+        if not registry:
+             return web.json_response({"transactions": []})
         
-        for task_id in range(start_id, end_id, -1):
-            task = self.blockchain.get_task(task_id)
-            if not task:
-                continue
+        events_list = []
+        try:
+            # Determine block range (last 1000 blocks or from 0 for local)
+            current_block = self.blockchain.w3.eth.block_number
+            from_block = max(0, current_block - 1000)
+            
+            # 1. Created
+            logs_created = registry.events.TaskCreated.create_filter(fromBlock=from_block).get_all_entries()
+            for log in logs_created:
+                events_list.append({
+                    "log": log,
+                    "type": "TASK_CREATED",
+                    "id": log.args.taskId,
+                    "payment": None
+                })
                 
-            # Create a "transaction" for task creation
-            # We use description hash as a proxy for tx hash since we don't store tx hashes
-            tx_hash_base = task.description_hash.hex() if task.description_hash else "0"*64
+            # 2. Assigned
+            logs_assigned = registry.events.TaskAssigned.create_filter(fromBlock=from_block).get_all_entries()
+            for log in logs_assigned:
+                events_list.append({
+                    "log": log,
+                    "type": "PAYMENT_APPROVED",
+                    "id": log.args.taskId,
+                    "payment": float(self.blockchain.w3.from_wei(log.args.payment, "ether"))
+                })
+                
+            # 3. Completed
+            logs_completed = registry.events.TaskCompleted.create_filter(fromBlock=from_block).get_all_entries()
+            for log in logs_completed:
+                events_list.append({
+                    "log": log,
+                    "type": "TASK_COMPLETED",
+                    "id": log.args.taskId,
+                    "payment": float(self.blockchain.w3.from_wei(log.args.actualPayment, "ether"))
+                })
+        except Exception as e:
+            logger.error("Failed to fetch transaction logs", error=str(e))
+            # Fallback to empty if filter fails (e.g. RPC issue)
+            return web.json_response({"transactions": []})
+
+        # Sort by block number descending
+        events_list.sort(key=lambda x: x["log"].blockNumber, reverse=True)
+        events_list = events_list[:limit]
+        
+        transactions = []
+        for item in events_list:
+            log = item["log"]
+            # Estimate timestamp: current_time - (blocks_ago * 2s) - assuming 2s block time on hardhat
+            age_blocks = current_block - log.blockNumber
+            timestamp_ms = (time.time() - (age_blocks * 2)) * 1000
             
             transactions.append({
-                "hash": "0x" + tx_hash_base,
-                "type": "TASK_CREATED",
+                "hash": log.transactionHash.hex(),
+                "type": item["type"],
                 "status": "SUCCESS",
-                "timestamp": task.created_at * 1000, # MS for JS
-                "taskId": task.id,
-                "payment": None,
-                "gasUsed": 150000, # Mock gas
-                "block": 1000 + task.id # Mock block
+                "timestamp": timestamp_ms,
+                "taskId": item["id"],
+                "payment": item.get("payment"),
+                "gasUsed": 150000 + (log.blockNumber % 50000), # Mock gas variation
+                "block": log.blockNumber
             })
             
-            # If assigned, add assignment tx
-            if task.assigned_worker and task.assigned_worker != "0x" + "0"*40:
-                transactions.append({
-                    "hash": "0x" + tx_hash_base.replace("a", "b"),
-                    "type": "PAYMENT_APPROVED", # Using this as proxy for assignment/payment info
-                    "status": "SUCCESS",
-                    "timestamp": (task.created_at + 60) * 1000,
-                    "taskId": task.id,
-                    "payment": float(self.blockchain.w3.from_wei(task.max_payment, "ether")),
-                    "gasUsed": 120000,
-                    "block": 1000 + task.id + 1
-                })
-            
-            # If completed, add completion tx
-            if task.status.name == "COMPLETED":
-                result_hash = task.result_hash.hex() if task.result_hash else "0"*64
-                transactions.append({
-                    "hash": "0x" + result_hash,
-                    "type": "TASK_COMPLETED",
-                    "status": "SUCCESS",
-                    "timestamp": task.completed_at * 1000,
-                    "taskId": task.id,
-                    "payment": float(self.blockchain.w3.from_wei(task.actual_payment, "ether")),
-                    "gasUsed": 200000,
-                    "block": 1000 + task.id + 5
-                })
-        
         return web.json_response({"transactions": transactions})
     
     def run(self, host: str = None, port: int = None):

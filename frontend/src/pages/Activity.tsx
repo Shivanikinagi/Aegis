@@ -143,7 +143,7 @@ function TransactionRow({ tx }: { tx: typeof mockTransactions[0] }) {
                         <Hash className="w-3.5 h-3.5" />
                         <span className="font-mono">{formatHash(tx.hash)}</span>
                         <a
-                            href={`https://testnet.monad.xyz/tx/${tx.hash}`}
+                            href={`https://testnet.monadvision.com/tx/${tx.hash}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-purple-400 hover:text-purple-300 transition-colors"
@@ -229,7 +229,7 @@ export default function ActivityPage() {
                         </p>
                     </div>
                     <a
-                        href="https://testnet.monad.xyz"
+                        href="https://testnet.monadvision.com"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="btn-secondary hidden md:flex"
