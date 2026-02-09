@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/metatx/ERC2771Context.sol";
 import "./interfaces/ITaskRegistry.sol";
 import "./interfaces/ITreasury.sol";
 import "./interfaces/IWorkerRegistry.sol";
@@ -11,7 +12,7 @@ import "./interfaces/IWorkerRegistry.sol";
  * @notice Manages task lifecycle from creation to completion
  * @dev Coordinates between Treasury and WorkerRegistry for secure task execution
  */
-contract TaskRegistry is ITaskRegistry, Ownable {
+contract TaskRegistry is ITaskRegistry, Ownable, ERC2771Context {
     // ============ State Variables ============
     
     ITreasury public treasury;
@@ -38,13 +39,13 @@ contract TaskRegistry is ITaskRegistry, Ownable {
     // ============ Modifiers ============
     
     modifier onlyCoordinator() {
-        require(msg.sender == coordinator, "TaskRegistry: caller is not coordinator");
+        require(_msgSender() == coordinator, "TaskRegistry: caller is not coordinator");
         _;
     }
     
     modifier onlyAssignedWorker(uint256 taskId) {
         require(
-            tasks[taskId].assignedWorker == msg.sender,
+            tasks[taskId].assignedWorker == _msgSender(),
             "TaskRegistry: caller is not assigned worker"
         );
         _;
@@ -57,10 +58,27 @@ contract TaskRegistry is ITaskRegistry, Ownable {
     
     // ============ Constructor ============
     
-    constructor(address _treasury, address _workerRegistry) Ownable(msg.sender) {
+    constructor(address _treasury, address _workerRegistry, address _trustedForwarder) 
+        Ownable(msg.sender) 
+        ERC2771Context(_trustedForwarder) 
+    {
         require(_treasury != address(0) && _workerRegistry != address(0), "TaskRegistry: invalid addresses");
         treasury = ITreasury(_treasury);
         workerRegistry = IWorkerRegistry(_workerRegistry);
+    }
+
+    // ============ ERC2771 Overrides ============
+
+    function _msgSender() internal view override(Context, ERC2771Context) returns (address sender) {
+        return ERC2771Context._msgSender();
+    }
+
+    function _msgData() internal view override(Context, ERC2771Context) returns (bytes calldata) {
+        return ERC2771Context._msgData();
+    }
+
+    function _contextSuffixLength() internal view override(Context, ERC2771Context) returns (uint256) {
+        return ERC2771Context._contextSuffixLength();
     }
     
     // ============ External Functions ============
@@ -91,7 +109,7 @@ contract TaskRegistry is ITaskRegistry, Ownable {
             id: taskId,
             taskType: taskType,
             status: TaskStatus.Created,
-            creator: msg.sender,
+            creator: _msgSender(),
             assignedWorker: address(0),
             maxPayment: maxPayment,
             actualPayment: 0,
@@ -107,7 +125,7 @@ contract TaskRegistry is ITaskRegistry, Ownable {
         openTaskIndex[taskId] = openTaskIds.length;
         openTaskIds.push(taskId);
         
-        emit TaskCreated(taskId, taskType, msg.sender, maxPayment, deadline);
+        emit TaskCreated(taskId, taskType, _msgSender(), maxPayment, deadline);
         
         return taskId;
     }
@@ -194,7 +212,7 @@ contract TaskRegistry is ITaskRegistry, Ownable {
         task.status = TaskStatus.Submitted;
         task.resultHash = resultHash;
         
-        emit TaskSubmitted(taskId, msg.sender, resultHash);
+        emit TaskSubmitted(taskId, _msgSender(), resultHash);
     }
     
     /**
@@ -255,7 +273,7 @@ contract TaskRegistry is ITaskRegistry, Ownable {
         Task storage task = tasks[taskId];
         
         require(
-            msg.sender == task.creator || msg.sender == owner(),
+            _msgSender() == task.creator || _msgSender() == owner(),
             "TaskRegistry: not authorized"
         );
         require(

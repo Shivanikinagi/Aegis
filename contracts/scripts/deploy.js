@@ -9,8 +9,17 @@ async function main() {
     const balance = await hre.ethers.provider.getBalance(deployer.address);
     console.log("💰 Deployer balance:", hre.ethers.formatEther(balance), "MON\n");
 
+    // ============ Deploy MinimalForwarder ============
+    console.log("0️⃣ Deploying MinimalForwarder...");
+
+    const MinimalForwarder = await hre.ethers.getContractFactory("MinimalForwarder");
+    const forwarder = await MinimalForwarder.deploy();
+    await forwarder.waitForDeployment();
+    const forwarderAddress = await forwarder.getAddress();
+    console.log("   ✅ MinimalForwarder deployed at:", forwarderAddress);
+
     // ============ Deploy Treasury ============
-    console.log("1️⃣ Deploying Treasury...");
+    console.log("\n1️⃣ Deploying Treasury...");
 
     const Treasury = await hre.ethers.getContractFactory("Treasury");
     const treasury = await Treasury.deploy(
@@ -36,7 +45,7 @@ async function main() {
     console.log("\n3️⃣ Deploying TaskRegistry...");
 
     const TaskRegistry = await hre.ethers.getContractFactory("TaskRegistry");
-    const taskRegistry = await TaskRegistry.deploy(treasuryAddress, workerRegistryAddress);
+    const taskRegistry = await TaskRegistry.deploy(treasuryAddress, workerRegistryAddress, forwarderAddress);
     await taskRegistry.waitForDeployment();
     const taskRegistryAddress = await taskRegistry.getAddress();
     console.log("   ✅ TaskRegistry deployed at:", taskRegistryAddress);
@@ -57,6 +66,7 @@ async function main() {
     console.log("📋 DEPLOYMENT SUMMARY");
     console.log("=".repeat(60));
     console.log(`Network:         ${hre.network.name}`);
+    console.log(`MinimalForwarder: ${forwarderAddress}`);
     console.log(`Treasury:        ${treasuryAddress}`);
     console.log(`WorkerRegistry:  ${workerRegistryAddress}`);
     console.log(`TaskRegistry:    ${taskRegistryAddress}`);
@@ -72,6 +82,7 @@ async function main() {
         deployedAt: new Date().toISOString(),
         deployer: deployer.address,
         contracts: {
+            MinimalForwarder: forwarderAddress,
             Treasury: treasuryAddress,
             WorkerRegistry: workerRegistryAddress,
             TaskRegistry: taskRegistryAddress
