@@ -11,7 +11,7 @@ An AI-powered autonomous treasury management system built on **Monad Testnet**. 
 
 ## 📸 Dashboard Preview
 
-![Dashboard Screenshot](https://via.placeholder.com/800x400?text=Upload+Your+Dashboard+Screenshot+Here)
+![Dashboard Screenshot](./dashboard_preview.png)
 *Real-time autonomous agent activity on Monad local devnet*
 
 ---
