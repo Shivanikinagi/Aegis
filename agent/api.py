@@ -46,6 +46,7 @@ class APIServer:
         self.app.router.add_get("/api/workers/{address}", self.get_worker)
         self.app.router.add_get("/api/metrics", self.get_metrics)
         self.app.router.add_get("/api/learning", self.get_learning_stats)
+        self.app.router.add_get("/api/transactions", self.get_transactions)
     
     def _setup_cors(self):
         """Setup CORS middleware."""
@@ -296,6 +297,69 @@ class APIServer:
             }
         
         return web.json_response(insights)
+    
+    async def get_transactions(self, request: web.Request) -> web.Response:
+        """Get recent blockchain transactions."""
+        # For MVP, we'll derive transactions from tasks
+        # In production, we'd use an indexer or event logs
+        
+        limit = int(request.query.get("limit", 20))
+        transactions = []
+        
+        # Get recent tasks
+        task_count = self.blockchain.get_task_count()
+        # Fetch last 10 tasks to generate activity feed
+        start_id = task_count
+        end_id = max(0, task_count - 10)
+        
+        for task_id in range(start_id, end_id, -1):
+            task = self.blockchain.get_task(task_id)
+            if not task:
+                continue
+                
+            # Create a "transaction" for task creation
+            # We use description hash as a proxy for tx hash since we don't store tx hashes
+            tx_hash_base = task.description_hash.hex() if task.description_hash else "0"*64
+            
+            transactions.append({
+                "hash": "0x" + tx_hash_base,
+                "type": "TASK_CREATED",
+                "status": "SUCCESS",
+                "timestamp": task.created_at * 1000, # MS for JS
+                "taskId": task.id,
+                "payment": None,
+                "gasUsed": 150000, # Mock gas
+                "block": 1000 + task.id # Mock block
+            })
+            
+            # If assigned, add assignment tx
+            if task.assigned_worker and task.assigned_worker != "0x" + "0"*40:
+                transactions.append({
+                    "hash": "0x" + tx_hash_base.replace("a", "b"),
+                    "type": "PAYMENT_APPROVED", # Using this as proxy for assignment/payment info
+                    "status": "SUCCESS",
+                    "timestamp": (task.created_at + 60) * 1000,
+                    "taskId": task.id,
+                    "payment": float(self.blockchain.w3.from_wei(task.max_payment, "ether")),
+                    "gasUsed": 120000,
+                    "block": 1000 + task.id + 1
+                })
+            
+            # If completed, add completion tx
+            if task.status.name == "COMPLETED":
+                result_hash = task.result_hash.hex() if task.result_hash else "0"*64
+                transactions.append({
+                    "hash": "0x" + result_hash,
+                    "type": "TASK_COMPLETED",
+                    "status": "SUCCESS",
+                    "timestamp": task.completed_at * 1000,
+                    "taskId": task.id,
+                    "payment": float(self.blockchain.w3.from_wei(task.actual_payment, "ether")),
+                    "gasUsed": 200000,
+                    "block": 1000 + task.id + 5
+                })
+        
+        return web.json_response({"transactions": transactions})
     
     def run(self, host: str = None, port: int = None):
         """Run the API server."""
