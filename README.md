@@ -27,6 +27,7 @@ This system demonstrates **safe AI agent autonomy** in economic coordination:
 - All spending goes through **contract-enforced rules**
 - High-frequency payments optimized for **Monad's performance**
 - **Multi-Armed Bandit** learning for worker selection
+- **Gasless Transactions** via EIP-2771 (users don't pay gas)
 
 ---
 
@@ -131,7 +132,8 @@ Autonomous Treasury Agent/
 ├── contracts/               # Solidity smart contracts
 │   ├── src/
 │   │   ├── Treasury.sol          # Fund management & rules
-│   │   ├── TaskRegistry.sol      # Task lifecycle
+│   │   ├── TaskRegistry.sol      # Task lifecycle (Gasless)
+│   │   ├── MinimalForwarder.sol  # EIP-2771 Relayer
 │   │   ├── WorkerRegistry.sol    # Worker management
 │   │   └── interfaces/           # Contract interfaces
 │   ├── scripts/
