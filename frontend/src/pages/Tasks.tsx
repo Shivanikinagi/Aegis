@@ -144,6 +144,7 @@ function CreateTaskModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
                             <option value="DATA_PROCESSING">Data Processing</option>
                             <option value="API_CALL">API Call</option>
                             <option value="ANALYSIS">Analysis</option>
+                            <option value="CODE_REVIEW">Code Review</option>
                         </select>
                     </div>
 
@@ -385,7 +386,8 @@ export default function Tasks() {
                             className="input w-40"
                         >
                             <option value="all">All Status</option>
-                            <option value="CREATED">Pending</option>
+                            <option value="CREATED">Created</option>
+                            <option value="OPEN">Open</option>
                             <option value="ASSIGNED">Assigned</option>
                             <option value="COMPLETED">Completed</option>
                             <option value="FAILED">Failed</option>

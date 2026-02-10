@@ -7,7 +7,7 @@
       "failed_tasks": 0,
       "total_earnings": 8.728286715203438,
       "average_completion_time": 13.432469599999997,
-      "reliability_score": 0.56,
+      "reliability_score": 0.58,
       "task_type_scores": {
         "3": 1.0
       },
@@ -20,7 +20,7 @@
       "failed_tasks": 0,
       "total_earnings": 10.141212294449094,
       "average_completion_time": 11.491545860999997,
-      "reliability_score": 0.66,
+      "reliability_score": 0.68,
       "task_type_scores": {
         "4": 1.0,
         "1": 0.6,
@@ -36,7 +36,7 @@
       "failed_tasks": 0,
       "total_earnings": 17.449322171559427,
       "average_completion_time": 12.710945946375173,
-      "reliability_score": 0.76,
+      "reliability_score": 0.8,
       "task_type_scores": {
         "1": 1.0,
         "0": 1.0,
@@ -1156,6 +1156,51 @@
       "confidence": 1.0,
       "exploration": false,
       "timestamp": 1770663737.9034278
+    },
+    {
+      "task_id": 26,
+      "task_type": 1,
+      "worker": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "payment": 1.0542621860182873,
+      "confidence": 1.0,
+      "exploration": false,
+      "timestamp": 1770663754.4395342
+    },
+    {
+      "task_id": 27,
+      "task_type": 3,
+      "worker": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+      "payment": 0.9781819897937406,
+      "confidence": 1.0,
+      "exploration": false,
+      "timestamp": 1770663765.3780863
+    },
+    {
+      "task_id": 28,
+      "task_type": 2,
+      "worker": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "payment": 0.5437807521102563,
+      "confidence": 1.0,
+      "exploration": false,
+      "timestamp": 1770663776.840708
+    },
+    {
+      "task_id": 29,
+      "task_type": 4,
+      "worker": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+      "payment": 0.9790338579770699,
+      "confidence": 1.0,
+      "exploration": false,
+      "timestamp": 1770663801.0622683
+    },
+    {
+      "task_id": 30,
+      "task_type": 3,
+      "worker": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+      "payment": 0.6427595497831399,
+      "confidence": 1.0,
+      "exploration": false,
+      "timestamp": 1770663813.1827972
     }
   ]
 }

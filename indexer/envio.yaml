@@ -1,0 +1,99 @@
+# Envio Indexer Configuration for Autonomous Treasury Agent
+# This indexer tracks all on-chain events for the treasury system
+
+name: autonomous-treasury-indexer
+description: Indexes treasury, task, worker, and agent marketplace events
+version: 1.0.0
+
+# Networks to index
+networks:
+  - id: monad-testnet
+    start_block: 0  # Will be filled with deployment block
+    contracts:
+      # Treasury Contract
+      - name: Treasury
+        address: []  # Fill with deployed address
+        handler: src/TreasuryHandler.ts
+        events:
+          - event: Deposited(address indexed from, uint256 amount, uint256 newBalance)
+          - event: PaymentProposed(uint256 indexed taskId, address indexed worker, uint256 amount, uint256 proposedAt)
+          - event: PaymentExecuted(uint256 indexed taskId, address indexed worker, uint256 amount)
+          - event: PaymentRejected(uint256 indexed taskId, bytes32 reason)
+          - event: SpendLimitUpdated(uint256 newMaxPerTask, uint256 newMaxPerDay)
+          - event: CoordinatorUpdated(address indexed newCoordinator)
+      
+      # TaskRegistry Contract
+      - name: TaskRegistry
+        address: []  # Fill with deployed address
+        handler: src/TaskHandler.ts
+        events:
+          - event: TaskCreated(uint256 indexed taskId, address indexed creator, uint8 taskType, uint256 reward, uint256 duration)
+          - event: TaskProposed(uint256 indexed taskId, address indexed worker, uint256 proposedReward)
+          - event: TaskAssigned(uint256 indexed taskId, address indexed worker, uint256 reward)
+          - event: TaskSubmitted(uint256 indexed taskId, address indexed worker, uint256 submittedAt)
+          - event: TaskVerified(uint256 indexed taskId, bool success, uint256 verifiedAt)
+          - event: TaskCompleted(uint256 indexed taskId, address indexed worker, uint256 reward)
+          - event: TaskCancelled(uint256 indexed taskId, bytes32 reason)
+      
+      # WorkerRegistry Contract
+      - name: WorkerRegistry
+        address: []  # Fill with deployed address
+        handler: src/WorkerHandler.ts
+        events:
+          - event: WorkerRegistered(address indexed worker, string metadata, uint256 registeredAt)
+          - event: WorkerDeactivated(address indexed worker)
+          - event: WorkerReactivated(address indexed worker)
+          - event: ReliabilityUpdated(address indexed worker, uint256 newScore)
+      
+      # AgentMarketplace Contract
+      - name: AgentMarketplace
+        address: []  # Fill with deployed address
+        handler: src/MarketplaceHandler.ts
+        events:
+          - event: AgentRegistered(address indexed agent, string name, uint256 agentId)
+          - event: BidSubmitted(uint256 indexed bidId, uint256 indexed taskId, address indexed bidder, uint256 price)
+          - event: BidAccepted(uint256 indexed bidId, uint256 indexed taskId, address indexed winner)
+          - event: BidRejected(uint256 indexed bidId, uint256 indexed taskId)
+          - event: BidWithdrawn(uint256 indexed bidId, address indexed bidder)
+          - event: NegotiationStarted(uint256 indexed negotiationId, uint256 indexed taskId, address initiator, address counterparty)
+          - event: NegotiationAccepted(uint256 indexed negotiationId, uint256 finalPrice)
+          - event: AgentPaid(address indexed from, address indexed to, uint256 amount, string reason)
+          - event: ReputationUpdated(address indexed agent, uint256 newReputation)
+      
+      # AgentToken Contract
+      - name: AgentToken
+        address: []  # Fill with deployed address
+        handler: src/TokenHandler.ts
+        events:
+          - event: Transfer(address indexed from, address indexed to, uint256 value)
+          - event: Approval(address indexed owner, address indexed spender, uint256 value)
+          - event: RevenueDistributed(uint256 amount, uint256 revenuePerToken)
+          - event: RevenueClaimed(address indexed user, uint256 amount)
+          - event: Staked(address indexed user, uint256 amount)
+          - event: Unstaked(address indexed user, uint256 amount)
+          - event: ProposalCreated(uint256 indexed proposalId, address indexed proposer, string description)
+          - event: Voted(uint256 indexed proposalId, address indexed voter, bool support, uint256 weight)
+
+# Rollup period for aggregations
+rollup_interval: 100  # blocks
+
+# Database configuration
+database:
+  postgres:
+    host: localhost
+    port: 5432
+    database: treasury_indexer
+    user: indexer
+    password: ""  # Set via environment variable
+
+# API configuration
+api:
+  port: 8080
+  graphql: true
+  rest: true
+
+# Features
+features:
+  - realtime_updates
+  - historical_sync
+  - custom_aggregations

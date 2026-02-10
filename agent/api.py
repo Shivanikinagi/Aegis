@@ -183,12 +183,69 @@ class APIServer:
         })
     
     async def create_task(self, request: web.Request) -> web.Response:
-        """Create a new task (for demo purposes)."""
-        # This would normally be called by external systems
-        # For now, return an error - tasks should be created via contract
-        return web.json_response({
-            "error": "Task creation via API not supported. Use smart contract directly."
-        }, status=400)
+        """Create a new task via the smart contract."""
+        try:
+            data = await request.json()
+            
+            # Extract task parameters
+            task_type = data.get('taskType', 'COMPUTE')
+            max_payment = data.get('maxPayment', 1.0)
+            deadline = data.get('deadline', 0)
+            description = data.get('description', '')
+            verification_rule = data.get('verificationRule', 'manual')
+            
+            # Convert task type to enum value
+            from blockchain import TaskType
+            task_type_map = {
+                'COMPUTE': TaskType.COMPUTATION,
+                'DATA_PROCESSING': TaskType.DATA_ANALYSIS,
+                'API_CALL': TaskType.OTHER,
+                'ANALYSIS': TaskType.DATA_ANALYSIS,
+                'CODE_REVIEW': TaskType.CODE_REVIEW,
+                'TEXT_GENERATION': TaskType.TEXT_GENERATION,
+                'RESEARCH': TaskType.RESEARCH,
+            }
+            
+            task_type_enum = task_type_map.get(task_type, TaskType.COMPUTATION)
+            
+            # Create task on blockchain
+            max_payment_wei = self.blockchain.w3.to_wei(max_payment, 'ether')
+            
+            # Create description hash
+            import hashlib
+            description_hash = hashlib.sha256(description.encode()).digest()
+            
+            logger.info("Creating task via API", 
+                       task_type=task_type,
+                       max_payment=max_payment,
+                       deadline=deadline)
+            
+            # Call blockchain to create task
+            success, tx_hash, task_id = self.blockchain.create_task(
+                task_type=task_type_enum,
+                max_payment=max_payment_wei,
+                deadline=int(deadline) if deadline else 0,
+                description_hash=description_hash,
+                verification_rule=verification_rule
+            )
+            
+            if success:
+                return web.json_response({
+                    "success": True,
+                    "taskId": task_id,
+                    "txHash": tx_hash,
+                    "message": "Task created successfully"
+                })
+            else:
+                return web.json_response({
+                    "error": f"Failed to create task: {tx_hash}"
+                }, status=500)
+                
+        except Exception as e:
+            logger.error("Task creation failed", error=str(e))
+            return web.json_response({
+                "error": f"Task creation failed: {str(e)}"
+            }, status=500)
     
     async def get_workers(self, request: web.Request) -> web.Response:
         """Get list of workers."""

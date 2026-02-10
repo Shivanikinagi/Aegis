@@ -253,6 +253,62 @@ class BlockchainClient:
             return 0
         return self.task_registry.functions.getTaskCount().call()
     
+    def create_task(
+        self,
+        task_type: TaskType,
+        max_payment: int,  # In wei
+        deadline: int,  # Unix timestamp
+        description_hash: bytes,
+        verification_rule: str = "manual"
+    ) -> Tuple[bool, str, int]:
+        """
+        Create a new task on the blockchain.
+        Returns (success, tx_hash or error message, task_id).
+        """
+        if not self.task_registry or not self.account:
+            return (False, "Contracts or account not configured", 0)
+        
+        try:
+            # Build transaction
+            tx = self.task_registry.functions.createTask(
+                task_type.value,
+                max_payment,
+                deadline,
+                description_hash,
+                verification_rule
+            ).build_transaction({
+                "from": self.address,
+                "nonce": self.w3.eth.get_transaction_count(self.address),
+                "gas": 500000,
+                "gasPrice": self.w3.eth.gas_price
+            })
+            
+            # Sign and send
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            
+            # Wait for receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            if receipt["status"] == 1:
+                # Get the task ID from the TaskCreated event
+                task_id = self.get_task_count() - 1  # Latest task ID
+                
+                logger.info("Task created successfully",
+                           task_id=task_id,
+                           task_type=task_type.name,
+                           max_payment=self.w3.from_wei(max_payment, "ether"),
+                           tx_hash=tx_hash.hex())
+                return (True, tx_hash.hex(), task_id)
+            else:
+                return (False, "Transaction failed", 0)
+                
+        except Exception as e:
+            logger.error("Failed to create task",
+                        task_type=task_type.name,
+                        error=str(e))
+            return (False, str(e), 0)
+    
     def propose_assignment(
         self,
         task_id: int,

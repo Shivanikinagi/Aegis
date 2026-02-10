@@ -1,0 +1,11 @@
+{
+  "MinimalForwarder": "0xCfe6fbd39aAb896C316F6f9eb2f2b5253c1479f5",
+  "Treasury": "0xAA777e4835bbC729a0C50F1EC63dC5Dc371379E7",
+  "WorkerRegistry": "0x97C9082af4cD26D52a567adF7978bA6171920473",
+  "TaskRegistry": "0x1833f83dC4eE9175E808B4a1E95e0F0d150804ad",
+  "AgentMarketplace": "0x3eb8ca62791F678c6bB0772d98F6bbdc73696fC6",
+  "AgentToken": "0x13fd87720c1828C7519dA524bd89CEc0a6E2C2A8",
+  "rpcUrl": "https://testnet-rpc.monad.xyz",
+  "chainId": 10143,
+  "explorerUrl": "https://testnet.monadvision.com"
+}

@@ -1,0 +1,18 @@
+{
+  "coordinator": {
+    "address": "0xBb6ef05F40f3AFCF853C3b648EC5edB6f0D9CdB8",
+    "private_key": "0d4b9fbd73e15dcac593162ca41b6da61b3f5b02d73bd40be3bc72f1f2fe96a8"
+  },
+  "agent_1": {
+    "address": "0xC79B8cbd897639DB2Fe89226724AC660e11743D7",
+    "private_key": "e7fb8df80f5a64c437eaa10de9beb6635bbc23e41c1d12d81556257ddca231f6"
+  },
+  "agent_2": {
+    "address": "0x6f46EB54c3C1fD64d7c0C5AAeef55E3a6b83B7Dc",
+    "private_key": "dea868cfe67a479040b1031a16d0a5da6054add7a8067d3e68f684caddbddf38"
+  },
+  "agent_3": {
+    "address": "0x7be68148025dE0b3B2E137efcbB8bCA7379E0D5D",
+    "private_key": "a20c2df56aaea59018e09b6bfd8d89e6761fc39339475055adc2b7a681e2980b"
+  }
+}

@@ -15,6 +15,7 @@ import {
     Bell,
     TrendingUp
 } from 'lucide-react';
+import { WalletButton, NetworkIndicator } from './WalletButton';
 
 const navItems = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard, description: 'Overview & Stats' },
@@ -150,11 +151,11 @@ export default function Layout() {
                         </div>
 
                         <div className="flex items-center gap-3">
-                            {/* Connection Status */}
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-lg">
-                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                <span className="text-xs text-green-400 font-medium">Connected</span>
-                            </div>
+                            {/* Network Indicator */}
+                            <NetworkIndicator />
+
+                            {/* Wallet Connection */}
+                            <WalletButton />
 
                             {/* Notifications */}
                             <button className="btn-icon relative">
