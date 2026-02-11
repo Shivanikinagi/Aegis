@@ -9,6 +9,7 @@ import Activity from "./pages/Activity";
 import Decisions from "./pages/Decisions";
 import Learning from "./pages/Learning";
 import Settings from "./pages/Settings";
+import Layout from "./components/Layout";
 
 const queryClient = new QueryClient();
 
@@ -17,14 +18,16 @@ const App = () => (
     <Toaster />
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/tasks" element={<Tasks />} />
-        <Route path="/workers" element={<Workers />} />
-        <Route path="/treasury" element={<Treasury />} />
-        <Route path="/activity" element={<Activity />} />
-        <Route path="/decisions" element={<Decisions />} />
-        <Route path="/learning" element={<Learning />} />
-        <Route path="/settings" element={<Settings />} />
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/tasks" element={<Tasks />} />
+          <Route path="/workers" element={<Workers />} />
+          <Route path="/treasury" element={<Treasury />} />
+          <Route path="/activity" element={<Activity />} />
+          <Route path="/decisions" element={<Decisions />} />
+          <Route path="/learning" element={<Learning />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   </QueryClientProvider>

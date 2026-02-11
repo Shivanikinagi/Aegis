@@ -199,6 +199,37 @@ export default function Dashboard() {
                 </div>
             </div>
 
+            {/* Quick Actions Row */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white">Quick Actions</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <QuickLink
+                        to="/tasks"
+                        icon={ListTodo}
+                        title="Create New Task"
+                        description="Submit a task with budget"
+                    />
+                    <QuickLink
+                        to="/decisions"
+                        icon={Brain}
+                        title="View Decisions"
+                        description="See reasoning"
+                    />
+                    <QuickLink
+                        to="/learning"
+                        icon={TrendingUp}
+                        title="Learning Progress"
+                        description="Track evolution"
+                    />
+                    <QuickLink
+                        to="/activity"
+                        icon={Activity}
+                        title="On-Chain Activity"
+                        description="View transactions"
+                    />
+                </div>
+            </div>
+
             {/* Key Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard
@@ -321,67 +352,33 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Bottom Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Quick Actions */}
-                <div className="lg:col-span-2 space-y-4">
-                    <h3 className="text-lg font-semibold text-white">Quick Actions</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <QuickLink
-                            to="/tasks"
-                            icon={ListTodo}
-                            title="Create New Task"
-                            description="Submit a task with budget and deadline"
-                        />
-                        <QuickLink
-                            to="/decisions"
-                            icon={Brain}
-                            title="View Agent Decisions"
-                            description="See reasoning behind assignments"
-                        />
-                        <QuickLink
-                            to="/learning"
-                            icon={TrendingUp}
-                            title="Learning Progress"
-                            description="Track agent evolution over time"
-                        />
-                        <QuickLink
-                            to="/activity"
-                            icon={Activity}
-                            title="On-Chain Activity"
-                            description="View blockchain transactions"
-                        />
+            {/* Security Status - PROVES NO WALLET ACCESS */}
+            <div className="glass-card p-6">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
+                        <Shield className="w-5 h-5 text-green-400" />
+                    </div>
+                    <div>
+                        <h3 className="font-semibold text-white">Security Status</h3>
+                        <p className="text-xs text-green-400">All constraints enforced</p>
                     </div>
                 </div>
-
-                {/* Security Status - PROVES NO WALLET ACCESS */}
-                <div className="glass-card p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
-                            <Shield className="w-5 h-5 text-green-400" />
-                        </div>
-                        <div>
-                            <h3 className="font-semibold text-white">Security Status</h3>
-                            <p className="text-xs text-green-400">All constraints enforced</p>
-                        </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <span className="text-gray-400">Agent has no wallet access</span>
                     </div>
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm">
-                            <CheckCircle className="w-4 h-4 text-green-500" />
-                            <span className="text-gray-400">Agent has no wallet access</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                            <CheckCircle className="w-4 h-4 text-green-500" />
-                            <span className="text-gray-400">Contract enforces all limits</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                            <CheckCircle className="w-4 h-4 text-green-500" />
-                            <span className="text-gray-400">Daily cap: 100 MON</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                            <CheckCircle className="w-4 h-4 text-green-500" />
-                            <span className="text-gray-400">Payment requires verification</span>
-                        </div>
+                    <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <span className="text-gray-400">Contract enforces all limits</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <span className="text-gray-400">Daily cap: 100 MON</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <span className="text-gray-400">Payment requires verification</span>
                     </div>
                 </div>
             </div>

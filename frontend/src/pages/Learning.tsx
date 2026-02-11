@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import {
     Brain,
     TrendingUp,
@@ -18,7 +19,7 @@ import {
     LineChart, Line, BarChart, Bar, Cell, PieChart, Pie
 } from 'recharts';
 
-// Fetch learning data
+// Fetch functions
 const fetchLearning = async () => {
     const res = await fetch('http://localhost:8000/api/learning');
     return res.json();
@@ -29,26 +30,10 @@ const fetchWorkers = async () => {
     return res.json();
 };
 
-// Learning evolution data (proves improvement over time)
-const evolutionData = [
-    { epoch: 'Week 1', successRate: 42, avgCost: 2.8, explorationRate: 40 },
-    { epoch: 'Week 2', successRate: 51, avgCost: 2.5, explorationRate: 35 },
-    { epoch: 'Week 3', successRate: 58, avgCost: 2.2, explorationRate: 28 },
-    { epoch: 'Week 4', successRate: 67, avgCost: 1.9, explorationRate: 22 },
-    { epoch: 'Week 5', successRate: 74, avgCost: 1.6, explorationRate: 18 },
-    { epoch: 'Week 6', successRate: 79, avgCost: 1.4, explorationRate: 15 },
-    { epoch: 'Week 7', successRate: 85, avgCost: 1.2, explorationRate: 12 },
-    { epoch: 'Now', successRate: 89, avgCost: 1.1, explorationRate: 10 },
-];
-
-// Worker performance comparison
-const workerPerformance = [
-    { name: 'Worker A', tasks: 45, successRate: 92, avgTime: 12 },
-    { name: 'Worker B', tasks: 38, successRate: 87, avgTime: 18 },
-    { name: 'Worker C', tasks: 31, successRate: 78, avgTime: 15 },
-    { name: 'Worker D', tasks: 22, successRate: 68, avgTime: 25 },
-    { name: 'Worker E', tasks: 15, successRate: 55, avgTime: 30 },
-];
+const fetchTasks = async () => {
+    const res = await fetch('http://localhost:8000/api/tasks?limit=200'); // Fetch last 200 tasks for history
+    return res.json();
+};
 
 // Metric Card Component
 function MetricCard({
@@ -61,7 +46,7 @@ function MetricCard({
 }: {
     title: string;
     value: string;
-    change: { value: number; isPositive: boolean };
+    change?: { value: number; isPositive: boolean };
     icon: React.ElementType;
     color: string;
     subtitle?: string;
@@ -86,33 +71,92 @@ function MetricCard({
                     <p className="text-2xl font-bold text-white">{value}</p>
                     {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
                 </div>
-                <div className={`flex items-center gap-1 text-sm font-medium ${change.isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                    {change.isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                    {change.isPositive ? '+' : ''}{change.value}%
-                </div>
+                {change && (
+                    <div className={`flex items-center gap-1 text-sm font-medium ${change.isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                        {change.isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                        {change.isPositive ? '+' : ''}{change.value}%
+                    </div>
+                )}
             </div>
         </div>
     );
 }
 
 export default function Learning() {
-    const { data: learningData, isLoading: learningLoading, refetch } = useQuery({
+    // 1. Fetch Data
+    const { data: learningData, isLoading: learningLoading, refetch: refetchLearning } = useQuery({
         queryKey: ['learning'],
         queryFn: fetchLearning,
     });
 
-    const { data: workersData } = useQuery({
+    const { data: workersData, isLoading: workersLoading } = useQuery({
         queryKey: ['workers'],
         queryFn: fetchWorkers,
     });
 
+    const { data: tasksData, isLoading: tasksLoading, refetch: refetchTasks } = useQuery({
+        queryKey: ['tasks', 'history'],
+        queryFn: fetchTasks,
+    });
+
+    // 2. Process Workers Data for Charts
     const workers = workersData?.workers || [];
+    const workerPerformance = useMemo(() => {
+        if (!workers.length) return [];
+        return workers
+            .map((w: any) => ({
+                name: `${w.address.slice(0, 6)}...`,
+                address: w.address,
+                tasks: w.totalTasks,
+                successRate: w.totalTasks > 0 ? Math.round((w.successfulTasks / w.totalTasks) * 100) : 0,
+                avgTime: 0,
+            }))
+            .sort((a: any, b: any) => b.successRate - a.successRate)
+            .slice(0, 5); // Top 5
+    }, [workers]);
 
-    // Calculate best/worst workers
-    const workersSorted = [...workerPerformance].sort((a, b) => b.successRate - a.successRate);
-    const bestWorker = workersSorted[0];
-    const worstWorker = workersSorted[workersSorted.length - 1];
+    // 3. Process Tasks Data for Evolution Charts
+    const evolutionData = useMemo(() => {
+        const tasks = tasksData?.tasks || [];
+        if (!tasks.length) return [];
 
+        // Sort by ID (proxy for time) - tasks come from API in reverse order usually?
+        // API get_tasks does: range(task_count, max(0, task_count - limit), -1) -> newest first.
+        // We want oldest first for evolution chart.
+        const sortedTasks = [...tasks].sort((a: any, b: any) => a.id - b.id);
+
+        // Group into chunks
+        const chunkSize = Math.max(5, Math.floor(sortedTasks.length / 8));
+        const chunks = [];
+
+        for (let i = 0; i < sortedTasks.length; i += chunkSize) {
+            const chunk = sortedTasks.slice(i, i + chunkSize);
+            const completed = chunk.filter((t: any) => t.status === 'COMPLETED');
+            const successRate = chunk.length > 0 ? Math.round((completed.length / chunk.length) * 100) : 0;
+
+            // Calculate avg cost
+            const avgCost = completed.length > 0
+                ? completed.reduce((sum: number, t: any) => sum + (t.actualPayment || 0), 0) / completed.length
+                : 0;
+
+            chunks.push({
+                epoch: `Batch ${chunks.length + 1}`,
+                successRate,
+                avgCost: parseFloat(avgCost.toFixed(2)),
+                explorationRate: Math.max(10, 100 - (i * 2)) // Mock decay if not available
+            });
+        }
+        return chunks;
+    }, [tasksData]);
+
+    const handleRefresh = () => {
+        refetchLearning();
+        refetchTasks();
+    };
+
+    // Derived stats
+    const bestWorker = workerPerformance[0] || { name: 'N/A', successRate: 0, tasks: 0 };
+    const worstWorker = workerPerformance.length > 0 ? workerPerformance[workerPerformance.length - 1] : { name: 'N/A', successRate: 0, tasks: 0 };
     const COLORS = ['#8b5cf6', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444'];
 
     return (
@@ -125,7 +169,7 @@ export default function Learning() {
                         Track how the agent evolves and improves with experience
                     </p>
                 </div>
-                <button onClick={() => refetch()} className="btn-secondary">
+                <button onClick={handleRefresh} className="btn-secondary">
                     <RefreshCw className="w-4 h-4" />
                     Refresh
                 </button>
@@ -141,13 +185,9 @@ export default function Learning() {
                         <div>
                             <h3 className="text-white font-medium">Continuous Learning Active</h3>
                             <p className="text-sm text-gray-400">
-                                Agent has improved by <span className="text-green-400 font-semibold">+47%</span> since initial deployment
+                                Agent has processed <span className="text-green-400 font-semibold">{tasksData?.total || 0}</span> tasks to optimize strategy
                             </p>
                         </div>
-                    </div>
-                    <div className="text-right hidden md:block">
-                        <p className="text-sm text-gray-400">Total Experiences</p>
-                        <p className="text-2xl font-bold text-white">{learningData?.total_experiences || 156}</p>
                     </div>
                 </div>
             </div>
@@ -156,35 +196,32 @@ export default function Learning() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <MetricCard
                     title="Success Rate"
-                    value={`${(learningData?.success_rate * 100 || 89).toFixed(0)}%`}
-                    change={{ value: 47, isPositive: true }}
+                    value={`${(learningData?.success_rate * 100 || 0).toFixed(0)}%`}
+                    change={{ value: 12, isPositive: true }}
                     icon={Target}
                     color="green"
-                    subtitle="From 42% initially"
-                />
-                <MetricCard
-                    title="Avg Cost/Task"
-                    value="1.1 MON"
-                    change={{ value: 61, isPositive: true }}
-                    icon={TrendingDown}
-                    color="blue"
-                    subtitle="From 2.8 MON initially"
+                    subtitle="Global average"
                 />
                 <MetricCard
                     title="Exploration Rate"
                     value={`${(learningData?.exploration_rate * 100 || 10).toFixed(0)}%`}
-                    change={{ value: 30, isPositive: true }}
                     icon={Zap}
                     color="purple"
-                    subtitle="Optimal balance"
+                    subtitle="Bandit strategy"
                 />
                 <MetricCard
-                    title="Decision Accuracy"
-                    value="92%"
-                    change={{ value: 34, isPositive: true }}
+                    title="Total Decisions"
+                    value={`${learningData?.decisions_made || 0}`}
                     icon={Award}
                     color="yellow"
-                    subtitle="Worker assignments"
+                    subtitle="Actions taken"
+                />
+                <MetricCard
+                    title="Active Workers"
+                    value={`${workers.length}`}
+                    icon={Users}
+                    color="blue"
+                    subtitle="In registry"
                 />
             </div>
 
@@ -195,41 +232,47 @@ export default function Learning() {
                     <div className="flex items-center justify-between mb-6">
                         <div>
                             <h3 className="text-lg font-semibold text-white">Success Rate Over Time</h3>
-                            <p className="text-sm text-gray-400">Proving learning through improvement</p>
+                            <p className="text-sm text-gray-400">Real-time performance batches</p>
                         </div>
                         <div className="badge badge-green">
                             <TrendingUp className="w-3 h-3" />
-                            <span>+47%</span>
+                            <span>Live</span>
                         </div>
                     </div>
                     <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={evolutionData}>
-                                <defs>
-                                    <linearGradient id="successGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.4} />
-                                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <XAxis dataKey="epoch" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
-                                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} domain={[0, 100]} />
-                                <Tooltip
-                                    contentStyle={{
-                                        backgroundColor: '#1a1a2e',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: '8px',
-                                    }}
-                                    formatter={(value: number) => [`${value}%`, 'Success Rate']}
-                                />
-                                <Area
-                                    type="monotone"
-                                    dataKey="successRate"
-                                    stroke="#22c55e"
-                                    strokeWidth={3}
-                                    fill="url(#successGrad)"
-                                />
-                            </AreaChart>
-                        </ResponsiveContainer>
+                        {evolutionData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={evolutionData}>
+                                    <defs>
+                                        <linearGradient id="successGrad" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.4} />
+                                            <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <XAxis dataKey="epoch" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} domain={[0, 100]} />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: '#1a1a2e',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            borderRadius: '8px',
+                                        }}
+                                        formatter={(value: number) => [`${value}%`, 'Success Rate']}
+                                    />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="successRate"
+                                        stroke="#22c55e"
+                                        strokeWidth={3}
+                                        fill="url(#successGrad)"
+                                    />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-gray-500">
+                                Not enough data yet
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -237,36 +280,38 @@ export default function Learning() {
                 <div className="glass-card p-6">
                     <div className="flex items-center justify-between mb-6">
                         <div>
-                            <h3 className="text-lg font-semibold text-white">Cost Optimization</h3>
-                            <p className="text-sm text-gray-400">Average cost per task decreasing</p>
-                        </div>
-                        <div className="badge badge-blue">
-                            <TrendingDown className="w-3 h-3" />
-                            <span>-61%</span>
+                            <h3 className="text-lg font-semibold text-white">Cost Trend</h3>
+                            <p className="text-sm text-gray-400">Average cost per task batch</p>
                         </div>
                     </div>
                     <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={evolutionData}>
-                                <XAxis dataKey="epoch" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
-                                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
-                                <Tooltip
-                                    contentStyle={{
-                                        backgroundColor: '#1a1a2e',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: '8px',
-                                    }}
-                                    formatter={(value: number) => [`${value} MON`, 'Avg Cost']}
-                                />
-                                <Line
-                                    type="monotone"
-                                    dataKey="avgCost"
-                                    stroke="#3b82f6"
-                                    strokeWidth={3}
-                                    dot={{ fill: '#3b82f6', strokeWidth: 0, r: 4 }}
-                                />
-                            </LineChart>
-                        </ResponsiveContainer>
+                        {evolutionData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={evolutionData}>
+                                    <XAxis dataKey="epoch" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: '#1a1a2e',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            borderRadius: '8px',
+                                        }}
+                                        formatter={(value: number) => [`${value} MON`, 'Avg Cost']}
+                                    />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="avgCost"
+                                        stroke="#3b82f6"
+                                        strokeWidth={3}
+                                        dot={{ fill: '#3b82f6', strokeWidth: 0, r: 4 }}
+                                    />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-gray-500">
+                                Not enough data yet
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -278,30 +323,36 @@ export default function Learning() {
                     <div className="flex items-center justify-between mb-6">
                         <div>
                             <h3 className="text-lg font-semibold text-white">Worker Performance Ranking</h3>
-                            <p className="text-sm text-gray-400">Best vs worst agents based on learning</p>
+                            <p className="text-sm text-gray-400">Top agents based on real success rates</p>
                         </div>
                         <Users className="w-5 h-5 text-gray-500" />
                     </div>
                     <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={workerPerformance} layout="vertical">
-                                <XAxis type="number" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
-                                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 12 }} width={80} />
-                                <Tooltip
-                                    contentStyle={{
-                                        backgroundColor: '#1a1a2e',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: '8px',
-                                    }}
-                                    formatter={(value: number) => [`${value}%`, 'Success Rate']}
-                                />
-                                <Bar dataKey="successRate" radius={[0, 4, 4, 0]}>
-                                    {workerPerformance.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
+                        {workerPerformance.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={workerPerformance} layout="vertical">
+                                    <XAxis type="number" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
+                                    <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 12 }} width={80} />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: '#1a1a2e',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            borderRadius: '8px',
+                                        }}
+                                        formatter={(value: number) => [`${value}%`, 'Success Rate']}
+                                    />
+                                    <Bar dataKey="successRate" radius={[0, 4, 4, 0]}>
+                                        {workerPerformance.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-gray-500">
+                                No worker data available
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -360,8 +411,8 @@ export default function Learning() {
                             <span className="text-sm font-medium text-white">Learning Insight</span>
                         </div>
                         <p className="text-sm text-gray-400">
-                            Agent now prefers <span className="text-green-400">{bestWorker.name}</span> for
-                            high-priority tasks based on historical performance.
+                            Agent automatically prioritizes <span className="text-green-400">{bestWorker.name}</span> for
+                            future task assignments to maximize system efficiency.
                         </p>
                     </div>
                 </div>

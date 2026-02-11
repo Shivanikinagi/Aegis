@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import {
     Wallet,
     Shield,
@@ -22,35 +23,71 @@ const fetchTreasury = async () => {
     return res.json();
 };
 
-// Spending history mock
-const spendingHistory = [
-    { day: 'Mon', spent: 12.5, limit: 100 },
-    { day: 'Tue', spent: 18.2, limit: 100 },
-    { day: 'Wed', spent: 8.7, limit: 100 },
-    { day: 'Thu', spent: 22.1, limit: 100 },
-    { day: 'Fri', spent: 15.3, limit: 100 },
-    { day: 'Sat', spent: 5.8, limit: 100 },
-    { day: 'Sun', spent: 3.2, limit: 100 },
-];
-
-// Allocation data
-const allocationData = [
-    { name: 'Available', value: 75, color: '#8b5cf6' },
-    { name: 'Pending', value: 15, color: '#3b82f6' },
-    { name: 'Reserved', value: 10, color: '#6b7280' },
-];
+const fetchTransactions = async () => {
+    const res = await fetch('http://localhost:8000/api/transactions?limit=200');
+    return res.json();
+};
 
 export default function Treasury() {
-    const { data: treasury, isLoading, refetch } = useQuery({
+    const { data: treasury, isLoading, refetch: refetchTreasury } = useQuery({
         queryKey: ['treasury'],
         queryFn: fetchTreasury,
     });
 
+    const { data: txData, isLoading: txLoading, refetch: refetchTx } = useQuery({
+        queryKey: ['transactions', 'history'],
+        queryFn: fetchTransactions,
+    });
+
+    const handleRefresh = () => {
+        refetchTreasury();
+        refetchTx();
+    };
+
     const balance = treasury?.balance?.total || 0;
     const available = treasury?.balance?.available || 0;
+    const reserved = treasury?.balance?.reserved || 0;
     const dailySpent = treasury?.daily?.spent || 0;
-    const dailyLimit = treasury?.daily?.limit || 100;
-    const dailyRemaining = dailyLimit - dailySpent;
+    const dailyLimit = treasury?.daily?.remaining + treasury?.daily?.spent || 100; // Infer limit
+    const dailyRemaining = treasury?.daily?.remaining || 0;
+
+    // Process Spending History from Transactions
+    const spendingHistory = useMemo(() => {
+        const txs = txData?.transactions || [];
+        const days = 7;
+        const history = [];
+
+        for (let i = days - 1; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            const dateStr = date.toLocaleDateString('en-US', { weekday: 'short' });
+
+            // Filter transactions for this day
+            const startOfDay = new Date(date.setHours(0, 0, 0, 0)).getTime();
+            const endOfDay = new Date(date.setHours(23, 59, 59, 999)).getTime();
+
+            const daysSpending = txs
+                .filter((tx: any) =>
+                    (tx.type === 'TASK_COMPLETED' || tx.type === 'PAYMENT_APPROVED') && // Count approved (reserved) or completed? Usually approved counts against daily limit
+                    tx.timestamp >= startOfDay &&
+                    tx.timestamp <= endOfDay
+                )
+                .reduce((sum: number, tx: any) => sum + (tx.payment || 0), 0);
+
+            history.push({
+                day: dateStr,
+                spent: parseFloat(daysSpending.toFixed(2)),
+                limit: dailyLimit
+            });
+        }
+        return history;
+    }, [txData, dailyLimit]);
+
+    // Allocation Data
+    const allocationData = [
+        { name: 'Available', value: available, color: '#22c55e' },
+        { name: 'Reserved', value: reserved, color: '#eab308' }, // Yellow for reserved
+    ];
 
     return (
         <div className="space-y-6">
@@ -61,12 +98,12 @@ export default function Treasury() {
                     <p className="text-gray-400 text-sm">Contract-managed funds with enforced spending limits</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button onClick={() => refetch()} className="btn-secondary">
+                    <button onClick={handleRefresh} className="btn-secondary">
                         <RefreshCw className="w-4 h-4" />
                         Refresh
                     </button>
                     <a
-                        href="https://testnet.monad.xyz"
+                        href={`https://testnet.monadvision.com/address/${treasury?.address}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="btn-primary"
@@ -173,41 +210,47 @@ export default function Treasury() {
                     <div className="flex items-center justify-between mb-6">
                         <div>
                             <h3 className="text-lg font-semibold text-white">Spending History</h3>
-                            <p className="text-sm text-gray-400">Daily spending over the past week</p>
+                            <p className="text-sm text-gray-400">Daily spending (Last 7 Days)</p>
                         </div>
                         <div className="badge badge-blue">
                             <TrendingDown className="w-3 h-3" />
-                            <span>Avg: 12.3 MON/day</span>
+                            <span>Live Data</span>
                         </div>
                     </div>
                     <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={spendingHistory}>
-                                <defs>
-                                    <linearGradient id="spendGradient" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
-                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
-                                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
-                                <Tooltip
-                                    contentStyle={{
-                                        backgroundColor: '#1a1a2e',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: '8px',
-                                    }}
-                                    formatter={(value: number) => [`${value} MON`, 'Spent']}
-                                />
-                                <Area
-                                    type="monotone"
-                                    dataKey="spent"
-                                    stroke="#8b5cf6"
-                                    strokeWidth={3}
-                                    fill="url(#spendGradient)"
-                                />
-                            </AreaChart>
-                        </ResponsiveContainer>
+                        {spendingHistory.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={spendingHistory}>
+                                    <defs>
+                                        <linearGradient id="spendGradient" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
+                                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: '#1a1a2e',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            borderRadius: '8px',
+                                        }}
+                                        formatter={(value: number) => [`${value} MON`, 'Spent']}
+                                    />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="spent"
+                                        stroke="#8b5cf6"
+                                        strokeWidth={3}
+                                        fill="url(#spendGradient)"
+                                    />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-gray-500">
+                                No spending history available
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -239,7 +282,7 @@ export default function Treasury() {
                                         border: '1px solid rgba(255,255,255,0.1)',
                                         borderRadius: '8px',
                                     }}
-                                    formatter={(value: number) => [`${value}%`, '']}
+                                    formatter={(value: number) => [`${value.toFixed(2)} MON`, '']}
                                 />
                             </PieChart>
                         </ResponsiveContainer>
@@ -252,7 +295,7 @@ export default function Treasury() {
                                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
                                     <span className="text-gray-400">{item.name}</span>
                                 </div>
-                                <span className="text-white font-medium">{item.value}%</span>
+                                <span className="text-white font-medium">{item.value.toFixed(2)} MON</span>
                             </div>
                         ))}
                     </div>
@@ -284,7 +327,9 @@ export default function Treasury() {
                             <CheckCircle className="w-4 h-4 text-green-500" />
                             <span className="text-sm font-medium text-white">Per Task Limit</span>
                         </div>
-                        <p className="text-2xl font-bold text-white">10 MON</p>
+                        <p className="text-2xl font-bold text-white">
+                            {treasury?.rules?.maxSpendPerTask || 10} MON
+                        </p>
                         <p className="text-xs text-gray-500">Max per single task</p>
                     </div>
                     <div className="p-4 bg-white/5 rounded-lg">
