@@ -24,28 +24,18 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
-# Hardhat test workers (must match setup_demo.js)
+# Monad testnet accounts
 WORKERS = [
     {
-        "address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-        "key": "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
-        "name": "Data Analyst"
-    },
-    {
-        "address": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-        "key": "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
-        "name": "Researcher"
-    },
-    {
-        "address": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
-        "key": "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
-        "name": "Generalist"
+        "address": "0xBb6ef05F40f3AFCF853C3b648EC5edB6f0D9CdB8",
+        "key": "0d4b9fbd73e15dcac593162ca41b6da61b3f5b02d73bd40be3bc72f1f2fe96a8",
+        "name": "Coordinator Agent"
     }
 ]
 
-# User account (Account #4 - User)
-USER_KEY = "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"
-USER_ADDRESS = "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
+# User account - Use deployer for testing
+USER_KEY = "0x33fb63a123a56154565ec1240723c5114e681a4c4f61da133a99c0970aace352"
+USER_ADDRESS = "0x6B845996450ecf86cC2CBc4b92C69d37F87f42d4"
 
 class EcosystemSimulator:
     def __init__(self):
@@ -70,6 +60,7 @@ class EcosystemSimulator:
 
     async def user_loop(self):
         """Simulate users creating tasks."""
+        print("🔵 User Simulator started")
         logger.info("User Simulator started")
         
         while self.running:
@@ -79,16 +70,22 @@ class EcosystemSimulator:
                 payment = random.uniform(0.1, 2.0) # ETH
                 
                 # 2. Create Task on-chain
+                print(f"💼 Creating task: Type={task_type}, Payment={payment:.2f} MON")
                 await self.create_task(task_type, payment)
+                print(f"✅ Task created successfully!")
                 
             except Exception as e:
+                print(f"❌ User failed: {e}")
                 logger.error("User failed", error=str(e))
                 
             # Wait 10-20 seconds before next task
-            await asyncio.sleep(random.randint(10, 20))
+            wait_time = random.randint(10, 20)
+            print(f"⏰ Waiting {wait_time} seconds before next task...")
+            await asyncio.sleep(wait_time)
 
     async def worker_loop(self):
         """Simulate workers checking and completing tasks."""
+        print("🤖 Worker Simulator started")
         logger.info("Worker Simulator started")
         
         while self.running:
@@ -98,6 +95,7 @@ class EcosystemSimulator:
                     await self.process_worker(worker)
                     
             except Exception as e:
+                print(f"❌ Worker loop error: {e}")
                 logger.error("Worker loop error", error=str(e))
                 
             await asyncio.sleep(5)
@@ -105,6 +103,7 @@ class EcosystemSimulator:
     async def create_task(self, task_type: int, payment_eth: float):
         """Transaction to create a new task."""
         if not self.client.task_registry:
+            print("❌ Task registry not available")
             return
             
         payment_wei = self.w3.to_wei(payment_eth, "ether")
@@ -128,6 +127,7 @@ class EcosystemSimulator:
         signed = self.w3.eth.account.sign_transaction(tx, USER_KEY)
         tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
         
+        print(f"📝 Task created - TX: {tx_hash.hex()[:10]}... Type: {TaskType(task_type).name}, Payment: {payment_eth:.2f} MON")
         logger.info("User created task", 
                    type=TaskType(task_type).name, 
                    payment=f"{payment_eth:.2f} MON")

@@ -219,6 +219,8 @@ function CreateTaskModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
     );
 }
 
+import { getExplorerLink } from '../lib/blockchainUtils';
+
 // Task Card Component
 function TaskCard({ task, onClick }: { task: any; onClick: () => void }) {
     const formatMON = (value: number) => value?.toFixed(4) || '0';
@@ -263,9 +265,15 @@ function TaskCard({ task, onClick }: { task: any; onClick: () => void }) {
                         <User className="w-4 h-4" />
                         <span>Worker</span>
                     </div>
-                    <span className="text-purple-400 font-mono text-xs">
+                    <a
+                        href={task.assignedWorker ? getExplorerLink(task.assignedWorker, 'address') : '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-purple-400 font-mono text-xs hover:underline z-10"
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         {formatAddress(task.assignedWorker)}
-                    </span>
+                    </a>
                 </div>
                 {task.actualPayment > 0 && (
                     <div className="flex items-center justify-between text-sm">
