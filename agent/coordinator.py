@@ -13,6 +13,7 @@ from config import agent_config, validate_config
 from memory import AgentMemory, TaskMemory, TaskOutcome
 from learner import StrategyLearner, Decision
 from blockchain import BlockchainClient, Task, TaskStatus, TaskType
+from notifications import notify_high_value_task_completed
 
 logger = structlog.get_logger()
 
@@ -273,6 +274,15 @@ class CoordinatorAgent:
             max_payment=max_payment_mon,
             success=success
         )
+
+        # Notify if high value
+        if actual_payment_mon > 100:
+             asyncio.create_task(notify_high_value_task_completed(
+                task_id=task.id,
+                worker=task.assigned_worker,
+                amount=actual_payment_mon,
+                success=success
+            ))
         
         # Record in memory
         completion_time = task.completed_at - task.created_at if task.completed_at > 0 else 0

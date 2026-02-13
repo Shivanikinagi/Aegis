@@ -17,6 +17,7 @@ from config import api_config, blockchain_config
 from coordinator import CoordinatorAgent
 from memory import AgentMemory
 from blockchain import BlockchainClient, TaskStatus
+from notifications import notify_high_value_task_created
 
 logger = structlog.get_logger()
 
@@ -48,6 +49,7 @@ class APIServer:
         self.app.router.add_get("/api/metrics", self.get_metrics)
         self.app.router.add_get("/api/learning", self.get_learning_stats)
         self.app.router.add_get("/api/transactions", self.get_transactions)
+        self.app.router.add_get("/api/treasury/history", self.get_treasury_history)
     
     def _setup_cors(self):
         """Setup CORS middleware."""
@@ -230,6 +232,15 @@ class APIServer:
             )
             
             if success:
+                # Notify if high value
+                if float(max_payment) > 100:
+                     asyncio.create_task(notify_high_value_task_created(
+                        task_id=task_id,
+                        creator="API User",
+                        amount=float(max_payment),
+                        description=description
+                    ))
+
                 return web.json_response({
                     "success": True,
                     "taskId": task_id,
@@ -428,6 +439,89 @@ class APIServer:
             })
             
         return web.json_response({"transactions": transactions})
+
+    async def get_treasury_history(self, request: web.Request) -> web.Response:
+        """Get treasury balance history for visualization."""
+        limit = int(request.query.get("limit", 50))
+        
+        # 1. Get current balance
+        total, reserved, available = self.blockchain.get_treasury_balance()
+        
+        # 2. Get transaction log to reconstruct history
+        current_block = self.blockchain.w3.eth.block_number
+        from_block = max(0, current_block - 2000)
+        
+        registry = self.blockchain.task_registry
+        
+        # Start with current balance at "now"
+        current_time = time.time()
+        
+        try:
+            if not registry:
+                return web.json_response({"history": []})
+
+            logs_assigned = registry.events.TaskAssigned.create_filter(fromBlock=from_block).get_all_entries()
+            logs_completed = registry.events.TaskCompleted.create_filter(fromBlock=from_block).get_all_entries()
+            
+            events = []
+            for log in logs_assigned:
+                events.append({
+                    "block": log.blockNumber,
+                    "type": "ASSIGNED",
+                    "amount": float(self.blockchain.w3.from_wei(log.args.payment, "ether"))
+                })
+            for log in logs_completed:
+                events.append({
+                    "block": log.blockNumber,
+                    "type": "COMPLETED",
+                    "amount": float(self.blockchain.w3.from_wei(log.args.actualPayment, "ether"))
+                })
+                
+            # Sort by block
+            events.sort(key=lambda x: x["block"])
+            
+
+            # Calculate total spending in this window
+            total_window_spending = sum(e["amount"] for e in events if e["type"] == "COMPLETED")
+            
+            # Reconstruct balance history
+            # Start balance = Current Balance + Total Spent in Window
+            current_balance = total
+            start_balance = current_balance + total_window_spending
+            
+            running_balance = start_balance
+            data = []
+            
+            # Initial point
+            start_time = current_time - ((current_block - from_block) * 2) 
+            data.append({
+                "timestamp": start_time * 1000,
+                "balance": running_balance
+            })
+            
+            for event in events:
+                if event["type"] == "COMPLETED":
+                    running_balance -= event["amount"]
+                    
+                    time_diff = (current_block - event["block"]) * 2
+                    timestamp = current_time - time_diff
+                    
+                    data.append({
+                        "timestamp": timestamp * 1000,
+                        "balance": running_balance
+                    })
+            
+            # Ensure final point matches current
+            data.append({
+                "timestamp": current_time * 1000,
+                "balance": current_balance
+            })
+            
+            return web.json_response({"history": data})
+            
+        except Exception as e:
+            logger.error("Failed to fetch history", error=str(e))
+            return web.json_response({"history": []})
     
     def run(self, host: str = None, port: int = None):
         """Run the API server."""

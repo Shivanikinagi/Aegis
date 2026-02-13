@@ -40,6 +40,11 @@ const fetchLearning = async () => {
     return res.json();
 };
 
+const fetchTreasuryHistory = async () => {
+    const res = await fetch('http://localhost:8000/api/treasury/history');
+    return res.json();
+};
+
 // Stat Card Component
 function StatCard({
     title,
@@ -135,6 +140,11 @@ export default function Dashboard() {
     const { data: learningData, isLoading: learningLoading } = useQuery({
         queryKey: ['learning'],
         queryFn: fetchLearning,
+    });
+
+    const { data: historyData, isLoading: historyLoading } = useQuery({
+        queryKey: ['treasuryHistory'],
+        queryFn: fetchTreasuryHistory,
     });
 
     // Stats calculation
@@ -267,6 +277,52 @@ export default function Dashboard() {
                     trend={{ value: 5.2, isPositive: true }}
                     loading={tasksLoading}
                 />
+            </div>
+
+            {/* Treasury History Chart */}
+            <div className="glass-card p-6">
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h3 className="text-lg font-semibold text-white">Treasury Balance</h3>
+                        <p className="text-sm text-gray-400">Balance history over time</p>
+                    </div>
+                </div>
+                <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={historyData?.history || []}>
+                            <defs>
+                                <linearGradient id="balanceGradient" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
+                                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                </linearGradient>
+                            </defs>
+                            <XAxis
+                                dataKey="timestamp"
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: '#6b7280', fontSize: 12 }}
+                                tickFormatter={(ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            />
+                            <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
+                            <Tooltip
+                                contentStyle={{
+                                    backgroundColor: '#1a1a2e',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '8px',
+                                }}
+                                labelFormatter={(ts) => new Date(ts).toLocaleString()}
+                                formatter={(value: number) => [`${value.toFixed(2)} MON`, 'Balance']}
+                            />
+                            <Area
+                                type="monotone"
+                                dataKey="balance"
+                                stroke="#8b5cf6"
+                                strokeWidth={3}
+                                fill="url(#balanceGradient)"
+                            />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
             </div>
 
             {/* Charts Row */}
