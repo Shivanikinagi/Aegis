@@ -6,11 +6,13 @@ Provides REST endpoints for the frontend dashboard.
 import asyncio
 import hashlib
 import time
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Set
 from dataclasses import asdict
 import json
+import weakref
 
 from aiohttp import web
+import aiohttp
 import structlog
 
 from config import api_config, blockchain_config
@@ -18,6 +20,19 @@ from coordinator import CoordinatorAgent
 from memory import AgentMemory
 from blockchain import BlockchainClient, TaskStatus
 from notifications import notify_high_value_task_created
+
+# Optional imports
+try:
+    from monad_explorer import MonadExplorer
+    EXPLORER_AVAILABLE = True
+except ImportError:
+    EXPLORER_AVAILABLE = False
+
+try:
+    from ai_reasoning import AIReasoner, LLMProvider
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
 
 logger = structlog.get_logger()
 
@@ -33,8 +48,36 @@ class APIServer:
         self.blockchain = BlockchainClient()
         self.memory = AgentMemory(data_dir="data")
         
+        # WebSocket connections for real-time updates
+        self._ws_clients: Set = set()
+        
+        # Explorer integration
+        self.explorer = MonadExplorer() if EXPLORER_AVAILABLE else None
+        
+        # AI reasoner for NL queries
+        self.ai_reasoner = None
+        if AI_AVAILABLE:
+            self._init_ai_reasoner()
+        
         self._setup_routes()
         self._setup_cors()
+    
+    def _init_ai_reasoner(self):
+        """Initialize AI reasoner for natural language queries."""
+        import os
+        try:
+            grok_key = os.getenv("GROK_API_KEY")
+            openai_key = os.getenv("OPENAI_API_KEY")
+            anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+            
+            if grok_key:
+                self.ai_reasoner = AIReasoner(provider=LLMProvider.GROK, grok_api_key=grok_key)
+            elif openai_key:
+                self.ai_reasoner = AIReasoner(provider=LLMProvider.OPENAI, openai_api_key=openai_key)
+            elif anthropic_key:
+                self.ai_reasoner = AIReasoner(provider=LLMProvider.ANTHROPIC, anthropic_api_key=anthropic_key)
+        except Exception as e:
+            logger.warning("Failed to init AI for NL queries", error=str(e))
     
     def _setup_routes(self):
         """Setup API routes."""
@@ -50,6 +93,12 @@ class APIServer:
         self.app.router.add_get("/api/learning", self.get_learning_stats)
         self.app.router.add_get("/api/transactions", self.get_transactions)
         self.app.router.add_get("/api/treasury/history", self.get_treasury_history)
+        # New endpoints
+        self.app.router.add_get("/api/ws", self.websocket_handler)
+        self.app.router.add_post("/api/query", self.natural_language_query)
+        self.app.router.add_get("/api/explorer/diagnostics", self.explorer_diagnostics)
+        self.app.router.add_get("/api/explorer/links", self.explorer_links)
+        self.app.router.add_get("/api/explorer/tx/{tx_hash}", self.explorer_verify_tx)
     
     def _setup_cors(self):
         """Setup CORS middleware."""
@@ -528,8 +577,222 @@ class APIServer:
         host = host or api_config.host
         port = port or api_config.port
         
+        # Start WebSocket broadcast loop
+        self.app.on_startup.append(self._start_ws_broadcast)
+        self.app.on_cleanup.append(self._stop_ws_broadcast)
+        
         logger.info("Starting API server", host=host, port=port)
         web.run_app(self.app, host=host, port=port)
+    
+    # ============ WebSocket Real-Time Updates ============
+    
+    async def websocket_handler(self, request: web.Request) -> web.WebSocketResponse:
+        """WebSocket endpoint for real-time updates."""
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        
+        self._ws_clients.add(ws)
+        logger.info("WebSocket client connected", total_clients=len(self._ws_clients))
+        
+        try:
+            # Send initial state
+            await ws.send_json({
+                "type": "connected",
+                "data": {"message": "Connected to Treasury Agent real-time feed"}
+            })
+            
+            async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    # Handle incoming messages (e.g., subscription preferences)
+                    try:
+                        data = json.loads(msg.data)
+                        if data.get("type") == "ping":
+                            await ws.send_json({"type": "pong"})
+                    except json.JSONDecodeError:
+                        pass
+                elif msg.type == aiohttp.WSMsgType.ERROR:
+                    logger.error("WebSocket error", error=ws.exception())
+        finally:
+            self._ws_clients.discard(ws)
+            logger.info("WebSocket client disconnected", total_clients=len(self._ws_clients))
+        
+        return ws
+    
+    async def _broadcast_ws(self, event_type: str, data: Dict):
+        """Broadcast an event to all WebSocket clients."""
+        if not self._ws_clients:
+            return
+        
+        message = json.dumps({"type": event_type, "data": data, "timestamp": time.time()})
+        
+        dead_clients = set()
+        for ws in self._ws_clients:
+            try:
+                await ws.send_str(message)
+            except Exception:
+                dead_clients.add(ws)
+        
+        # Clean up disconnected clients
+        self._ws_clients -= dead_clients
+    
+    async def _start_ws_broadcast(self, app):
+        """Start the WebSocket broadcast loop."""
+        app['ws_broadcast_task'] = asyncio.create_task(self._ws_broadcast_loop())
+    
+    async def _stop_ws_broadcast(self, app):
+        """Stop the WebSocket broadcast loop."""
+        if 'ws_broadcast_task' in app:
+            app['ws_broadcast_task'].cancel()
+            try:
+                await app['ws_broadcast_task']
+            except asyncio.CancelledError:
+                pass
+    
+    async def _ws_broadcast_loop(self):
+        """Periodically broadcast system updates to WebSocket clients."""
+        last_task_count = 0
+        while True:
+            try:
+                await asyncio.sleep(3)  # Broadcast every 3 seconds
+                
+                if not self._ws_clients:
+                    continue
+                
+                # Broadcast treasury status
+                total, reserved, available = self.blockchain.get_treasury_balance()
+                await self._broadcast_ws("treasury_update", {
+                    "total": total,
+                    "reserved": reserved,
+                    "available": available,
+                    "daily_spent": self.blockchain.get_daily_spent(),
+                    "daily_remaining": self.blockchain.get_remaining_daily_budget()
+                })
+                
+                # Check for new tasks
+                current_task_count = self.blockchain.get_task_count()
+                if current_task_count > last_task_count:
+                    for task_id in range(last_task_count + 1, current_task_count + 1):
+                        task = self.blockchain.get_task(task_id)
+                        if task:
+                            await self._broadcast_ws("new_task", {
+                                "id": task.id,
+                                "taskType": task.task_type.name,
+                                "status": task.status.name,
+                                "maxPayment": float(self.blockchain.w3.from_wei(task.max_payment, "ether"))
+                            })
+                    last_task_count = current_task_count
+                
+                # Broadcast agent status if running
+                if self.agent and self.agent.running:
+                    await self._broadcast_ws("agent_status", {
+                        "cycle_count": self.agent.cycle_count,
+                        "proposals_made": self.agent.proposals_made,
+                        "verifications_done": self.agent.verifications_done,
+                        "ai_analyses": getattr(self.agent, 'ai_analyses', 0)
+                    })
+                    
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("WebSocket broadcast error", error=str(e))
+                await asyncio.sleep(5)
+    
+    # ============ Natural Language Query ============
+    
+    async def natural_language_query(self, request: web.Request) -> web.Response:
+        """Handle natural language queries about the system."""
+        if not self.ai_reasoner:
+            return web.json_response(
+                {"error": "AI reasoning not available. Set an LLM API key in .env"},
+                status=503
+            )
+        
+        try:
+            body = await request.json()
+            query = body.get("query", "")
+            
+            if not query:
+                return web.json_response({"error": "Query is required"}, status=400)
+            
+            # Build context for the AI
+            total, reserved, available = self.blockchain.get_treasury_balance()
+            context = {
+                "treasury": {"total": total, "reserved": reserved, "available": available},
+                "task_count": self.blockchain.get_task_count(),
+                "agent_running": self.agent.running if self.agent else False,
+                "metrics": self.memory.get_metrics_summary(),
+            }
+            
+            if self.agent:
+                context["agent_status"] = {
+                    "cycle_count": self.agent.cycle_count,
+                    "proposals_made": self.agent.proposals_made,
+                    "verifications_done": self.agent.verifications_done,
+                }
+            
+            response = await self.ai_reasoner.natural_language_query(query, context)
+            
+            return web.json_response({"query": query, "response": response})
+            
+        except Exception as e:
+            logger.error("NL query failed", error=str(e))
+            return web.json_response({"error": str(e)}, status=500)
+    
+    # ============ Explorer Endpoints ============
+    
+    async def explorer_diagnostics(self, request: web.Request) -> web.Response:
+        """Run Monad explorer diagnostics."""
+        if not self.explorer:
+            return web.json_response(
+                {"error": "Explorer module not available"},
+                status=503
+            )
+        
+        try:
+            diagnostics = self.explorer.run_full_diagnostics()
+            return web.json_response(diagnostics)
+        except Exception as e:
+            logger.error("Explorer diagnostics failed", error=str(e))
+            return web.json_response({"error": str(e)}, status=500)
+    
+    async def explorer_links(self, request: web.Request) -> web.Response:
+        """Get explorer links for all deployed contracts."""
+        if not self.explorer:
+            return web.json_response(
+                {"error": "Explorer module not available"},
+                status=503
+            )
+        
+        links = self.explorer.generate_all_contract_links()
+        return web.json_response({
+            name: {"url": link.url, "type": link.link_type, "label": link.label}
+            for name, link in links.items()
+        })
+    
+    async def explorer_verify_tx(self, request: web.Request) -> web.Response:
+        """Verify a transaction on-chain."""
+        if not self.explorer:
+            return web.json_response(
+                {"error": "Explorer module not available"},
+                status=503
+            )
+        
+        tx_hash = request.match_info["tx_hash"]
+        result = self.explorer.verify_transaction(tx_hash)
+        
+        return web.json_response({
+            "tx_hash": result.tx_hash,
+            "exists": result.exists,
+            "status": result.status,
+            "block_number": result.block_number,
+            "gas_used": result.gas_used,
+            "from": result.from_address,
+            "to": result.to_address,
+            "value_wei": result.value_wei,
+            "timestamp": result.timestamp,
+            "explorer_url": self.explorer.tx_link(tx_hash).url,
+            "error": result.error
+        })
 
 
 def create_app(agent: Optional[CoordinatorAgent] = None) -> web.Application:

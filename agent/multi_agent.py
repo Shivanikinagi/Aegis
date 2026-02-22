@@ -10,7 +10,7 @@ from enum import Enum
 import structlog
 from web3 import Web3
 
-from blockchain import BlockchainClient, Task, TaskType
+from blockchain import BlockchainClient, Task, TaskType, TaskStatus
 from config import blockchain_config
 
 logger = structlog.get_logger()
@@ -94,7 +94,8 @@ class AutonomousAgent:
     
     def calculate_bid_price(self, task: Task, market_data: Dict) -> float:
         """Calculate bid price based on personality and market conditions"""
-        base_reward = float(Web3.from_wei(task.reward, 'ether'))
+        reward_wei = task.max_payment if hasattr(task, 'max_payment') else getattr(task, 'reward', 0)
+        base_reward = float(Web3.from_wei(reward_wei, 'ether'))
         
         if self.personality == AgentPersonality.AGGRESSIVE:
             # Bid 10-20% below base to win more
@@ -121,7 +122,8 @@ class AutonomousAgent:
     def should_bid_on_task(self, task: Task) -> bool:
         """Decide if agent should bid on this task"""
         # Check if task type matches capabilities
-        if task.taskType not in self.capabilities:
+        task_type = task.task_type if hasattr(task, 'task_type') else getattr(task, 'taskType', None)
+        if task_type not in self.capabilities:
             return False
         
         # Check if already too busy
@@ -167,11 +169,14 @@ class AutonomousAgent:
     
     def _generate_proposal(self, task: Task, bid_price: float) -> str:
         """Generate a proposal text for the bid"""
+        task_type_name = (task.task_type.name if hasattr(task, 'task_type') 
+                          else getattr(task, 'taskType', {}).name if hasattr(getattr(task, 'taskType', None), 'name') else 'UNKNOWN')
+        desc = f"Task#{task.id} [{task_type_name}]"
         proposals = [
-            f"I can complete {task.description} efficiently for {bid_price:.4f} ETH",
-            f"Experienced in {task.taskType.name} tasks. Price: {bid_price:.4f} ETH",
+            f"I can complete {desc} efficiently for {bid_price:.4f} ETH",
+            f"Experienced in {task_type_name} tasks. Price: {bid_price:.4f} ETH",
             f"Quick turnaround guaranteed. Bid: {bid_price:.4f} ETH",
-            f"High quality {task.taskType.name} work. Price: {bid_price:.4f} ETH"
+            f"High quality {task_type_name} work. Price: {bid_price:.4f} ETH"
         ]
         return random.choice(proposals)
     
@@ -260,10 +265,12 @@ class AutonomousAgent:
         
         success = random.random() < success_rates[self.personality]
         
+        reward_wei = task.max_payment if hasattr(task, 'max_payment') else getattr(task, 'reward', 0)
+        
         if success:
             logger.info(f"Agent {self.name} completed task", task_id=task.id)
             self.completed_tasks.append(task.id)
-            self.earnings += float(Web3.from_wei(task.reward, 'ether'))
+            self.earnings += float(Web3.from_wei(reward_wei, 'ether'))
         else:
             logger.warning(f"Agent {self.name} failed task", task_id=task.id)
         
@@ -374,11 +381,64 @@ class MultiAgentOrchestrator:
     
     async def _agent_decision_cycle(self, agent: AutonomousAgent):
         """One decision cycle for an agent"""
-        # 1. Check for new tasks to bid on
-        # 2. Check for pending negotiations
-        # 3. Execute assigned tasks
-        # In production, implement full logic
-        pass
+        try:
+            blockchain = BlockchainClient()
+            
+            # 1. Check for new tasks to bid on
+            open_task_ids = blockchain.get_open_tasks()
+            market_data = {
+                'num_bidders': len(self.agents),
+                'active_tasks': len(open_task_ids)
+            }
+            
+            for task_id in open_task_ids:
+                task = blockchain.get_task(task_id)
+                if not task:
+                    continue
+                
+                # Try to bid on the task
+                bid_id = await agent.submit_bid(task, market_data)
+                if bid_id:
+                    logger.info(f"Agent {agent.name} placed bid",
+                              task_id=task_id, bid_id=bid_id)
+            
+            # 2. Check for assigned tasks to execute
+            task_count = blockchain.get_task_count()
+            for task_id in range(max(1, task_count - 20), task_count + 1):
+                task = blockchain.get_task(task_id)
+                if not task:
+                    continue
+                
+                # Check if this task is assigned to our agent
+                if (hasattr(task, 'assigned_worker') and 
+                    task.assigned_worker and 
+                    task.assigned_worker.lower() == agent.address.lower() and
+                    task.status == TaskStatus.ASSIGNED):
+                    
+                    success = await agent.execute_task(task)
+                    logger.info(f"Agent {agent.name} task execution",
+                              task_id=task_id, success=success)
+            
+            # 3. Attempt negotiations with other agents for collaborative types
+            if agent.personality == AgentPersonality.COLLABORATIVE:
+                for other_addr, other_agent in self.agents.items():
+                    if other_addr == agent.address:
+                        continue
+                    if open_task_ids:
+                        task_id = random.choice(open_task_ids)
+                        task = blockchain.get_task(task_id)
+                        if task:
+                            reward_wei = task.max_payment if hasattr(task, 'max_payment') else 0
+                            offer = float(Web3.from_wei(reward_wei, 'ether')) * 0.5
+                            neg_id = await agent.negotiate_with_agent(
+                                other_addr, task_id, offer
+                            )
+                            if neg_id:
+                                logger.info(f"Agent {agent.name} negotiating",
+                                          with_agent=other_agent.name,
+                                          task_id=task_id)
+        except Exception as e:
+            logger.error(f"Agent {agent.name} decision cycle error", error=str(e))
     
     def stop(self):
         """Stop all agents"""

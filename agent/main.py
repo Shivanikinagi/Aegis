@@ -73,10 +73,9 @@ def main():
     # 3. Register Startup/Shutdown Hooks
     # Store agent reference in the app so hooks can access it
     server.app['agent_instance'] = agent
-    # TEMPORARILY DISABLED FOR DEBUGGING
-    # server.app.on_startup.append(start_background_agent)
-    # server.app.on_cleanup.append(cleanup_background_agent)
-    print("[DEBUG] Step 4: Startup hooks SKIPPED for testing")
+    server.app.on_startup.append(start_background_agent)
+    server.app.on_cleanup.append(cleanup_background_agent)
+    print("[DEBUG] Step 4: Startup hooks registered")
     
     # 4. Run the Application
     logger.info("Initializing System...", host=api_config.host, port=api_config.port)

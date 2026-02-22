@@ -5,6 +5,7 @@ It learns from outcomes to improve over time.
 """
 
 import asyncio
+import os
 import time
 from typing import Dict, List, Optional
 import structlog
@@ -14,6 +15,13 @@ from memory import AgentMemory, TaskMemory, TaskOutcome
 from learner import StrategyLearner, Decision
 from blockchain import BlockchainClient, Task, TaskStatus, TaskType
 from notifications import notify_high_value_task_completed
+
+# Optional AI reasoning integration
+try:
+    from ai_reasoning import AIReasoner, LLMProvider
+    AI_REASONING_AVAILABLE = True
+except ImportError:
+    AI_REASONING_AVAILABLE = False
 
 logger = structlog.get_logger()
 
@@ -43,6 +51,11 @@ class CoordinatorAgent:
         )
         self.blockchain = BlockchainClient()
         
+        # Initialize AI Reasoner (hybrid AI: UCB1 + LLM)
+        self.ai_reasoner = None
+        if AI_REASONING_AVAILABLE:
+            self._init_ai_reasoner()
+        
         # State tracking
         self.running = False
         self.processed_tasks: set = set()
@@ -52,10 +65,45 @@ class CoordinatorAgent:
         self.cycle_count = 0
         self.proposals_made = 0
         self.verifications_done = 0
+        self.ai_analyses = 0
         
         logger.info("Coordinator Agent initialized",
                    exploration_rate=agent_config.exploration_rate,
-                   polling_interval=agent_config.polling_interval)
+                   polling_interval=agent_config.polling_interval,
+                   ai_reasoning=self.ai_reasoner is not None)
+    
+    def _init_ai_reasoner(self):
+        """Initialize AI reasoner from available API keys."""
+        try:
+            grok_key = os.getenv("GROK_API_KEY")
+            openai_key = os.getenv("OPENAI_API_KEY")
+            anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+            
+            if grok_key:
+                self.ai_reasoner = AIReasoner(
+                    provider=LLMProvider.GROK,
+                    grok_api_key=grok_key
+                )
+                logger.info("AI Reasoner initialized with Grok")
+            elif openai_key:
+                self.ai_reasoner = AIReasoner(
+                    provider=LLMProvider.OPENAI,
+                    openai_api_key=openai_key
+                )
+                logger.info("AI Reasoner initialized with OpenAI")
+            elif anthropic_key:
+                self.ai_reasoner = AIReasoner(
+                    provider=LLMProvider.ANTHROPIC,
+                    anthropic_api_key=anthropic_key
+                )
+                logger.info("AI Reasoner initialized with Anthropic")
+            else:
+                logger.info("No LLM API keys found, running with UCB1 only")
+                self.ai_reasoner = None
+        except Exception as e:
+            logger.warning("Failed to initialize AI Reasoner, falling back to UCB1 only",
+                         error=str(e))
+            self.ai_reasoner = None
     
     async def start(self):
         """Start the agent's main loop."""
@@ -169,12 +217,50 @@ class CoordinatorAgent:
                 # Sync on-chain reliability to memory
                 worker_mem.reliability_score = worker_data.reliability_score / 10000
         
-        # Make decision using learner
+        # === AI-Enhanced Decision Making (Hybrid: UCB1 + LLM) ===
+        ai_analysis = None
+        ai_worker_scores = {}
+        
+        if self.ai_reasoner:
+            try:
+                # Use LLM to analyze task complexity and requirements
+                ai_analysis = await self.ai_reasoner.analyze_task(task)
+                self.ai_analyses += 1
+                
+                logger.info("AI task analysis complete",
+                           task_id=task_id,
+                           complexity=ai_analysis.get("complexity"),
+                           risk=ai_analysis.get("risk_level"))
+                
+                # Use LLM to score each worker for this task
+                for worker_addr in available_workers[:5]:  # Limit API calls
+                    worker_data = self.blockchain.get_worker(worker_addr)
+                    worker_mem = self.memory.get_worker(worker_addr.lower())
+                    
+                    worker_history = {
+                        'total_tasks': worker_data.total_tasks if worker_data else 0,
+                        'success_rate': worker_mem.success_rate,
+                        'avg_time': worker_mem.average_completion_time,
+                        'reliability': worker_data.reliability_score if worker_data else 0,
+                        'recent_performance': 'Good' if worker_mem.success_rate > 0.7 else 'Average'
+                    }
+                    
+                    score, reasoning = await self.ai_reasoner.assess_worker_match(
+                        task, worker_addr, worker_history
+                    )
+                    ai_worker_scores[worker_addr.lower()] = score
+                    
+            except Exception as e:
+                logger.warning("AI reasoning failed, falling back to UCB1",
+                             task_id=task_id, error=str(e))
+        
+        # Make decision using learner (UCB1) — enhanced with AI scores
         decision = self.learner.make_decision(
             task_id=task_id,
             task_type=int(task.task_type),
             max_payment=max_payment_mon,
-            available_workers=[w.lower() for w in available_workers]
+            available_workers=[w.lower() for w in available_workers],
+            ai_scores=ai_worker_scores if ai_worker_scores else None
         )
         
         if not decision:
@@ -221,11 +307,41 @@ class CoordinatorAgent:
                     await self._learn_from_task(task)
     
     async def _verify_task(self, task: Task):
-        """Verify a submitted task."""
-        # Simple verification logic based on verification rule
-        # In production, this would be more sophisticated
+        """Verify a submitted task using AI + rule-based hybrid approach."""
+        # Try AI-based verification first
+        ai_verified = None
+        ai_confidence = 0.0
         
-        verified = self._apply_verification_rule(task)
+        if self.ai_reasoner:
+            try:
+                is_valid, reasoning, confidence = await self.ai_reasoner.verify_task_completion(
+                    task,
+                    proposed_outcome=task.verification_rule or "Task completion",
+                    worker_submission=f"Result hash: {task.result_hash.hex() if isinstance(task.result_hash, bytes) else task.result_hash}"
+                )
+                ai_verified = is_valid
+                ai_confidence = confidence
+                
+                logger.info("AI verification result",
+                           task_id=task.id,
+                           ai_verified=ai_verified,
+                           confidence=f"{ai_confidence:.2f}",
+                           reasoning=reasoning[:100])
+            except Exception as e:
+                logger.warning("AI verification failed, using rule-based",
+                             task_id=task.id, error=str(e))
+        
+        # Rule-based verification as fallback or confirmation
+        rule_verified = self._apply_verification_rule(task)
+        
+        # Hybrid decision: if AI is confident, use AI; otherwise fallback to rules
+        if ai_verified is not None and ai_confidence >= 0.7:
+            verified = ai_verified
+        elif ai_verified is not None and ai_confidence >= 0.5:
+            # Medium confidence: agree with rules if both say the same thing
+            verified = ai_verified and rule_verified
+        else:
+            verified = rule_verified
         
         success, result = self.blockchain.verify_and_complete(task.id, verified)
         
@@ -235,6 +351,7 @@ class CoordinatorAgent:
             logger.info("Task verification submitted",
                        task_id=task.id,
                        verified=verified,
+                       method="ai+rules" if ai_verified is not None else "rules",
                        tx_hash=result)
     
     def _apply_verification_rule(self, task: Task) -> bool:
@@ -330,6 +447,8 @@ class CoordinatorAgent:
             "cycle_count": self.cycle_count,
             "proposals_made": self.proposals_made,
             "verifications_done": self.verifications_done,
+            "ai_analyses": self.ai_analyses,
+            "ai_reasoning_enabled": self.ai_reasoner is not None,
             "treasury": {
                 "total": total,
                 "reserved": reserved,

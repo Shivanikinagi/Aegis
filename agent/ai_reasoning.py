@@ -30,6 +30,37 @@ from blockchain import Task, TaskType, TaskStatus
 logger = structlog.get_logger()
 
 
+def _task_description(task: Task) -> str:
+    """Extract a human-readable description from a Task object."""
+    if hasattr(task, 'description') and isinstance(getattr(task, 'description', None), str):
+        return task.description
+    # Convert description_hash bytes to hex string for display
+    if hasattr(task, 'description_hash') and task.description_hash:
+        desc_hash = task.description_hash
+        if isinstance(desc_hash, bytes):
+            return f"Task#{task.id} [{task.task_type.name}] hash:{desc_hash.hex()[:16]}..."
+        return str(desc_hash)
+    return f"Task#{task.id} [{task.task_type.name}]"
+
+
+def _task_reward_wei(task: Task) -> int:
+    """Get the reward/max_payment from a Task, supporting both field names."""
+    if hasattr(task, 'reward'):
+        return task.reward
+    if hasattr(task, 'max_payment'):
+        return task.max_payment
+    return 0
+
+
+def _task_type_name(task: Task) -> str:
+    """Get the task type name, supporting both field names."""
+    if hasattr(task, 'taskType'):
+        return task.taskType.name if hasattr(task.taskType, 'name') else str(task.taskType)
+    if hasattr(task, 'task_type'):
+        return task.task_type.name if hasattr(task.task_type, 'name') else str(task.task_type)
+    return "UNKNOWN"
+
+
 class LLMProvider(Enum):
     """Supported LLM providers"""
     OPENAI = "openai"
@@ -113,9 +144,9 @@ class AIReasoner:
         prompt = f"""Analyze this blockchain task and provide a structured assessment:
 
 Task ID: {task.id}
-Type: {task.taskType.name}
-Description: {task.description}
-Reward: {task.reward} wei
+Type: {_task_type_name(task)}
+Description: {_task_description(task)}
+Reward: {_task_reward_wei(task)} wei
 Creator: {task.creator}
 
 Provide your analysis in JSON format with:
@@ -157,9 +188,9 @@ Focus on practical assessment for an autonomous treasury system."""
         prompt = f"""Assess how well this worker matches the given task:
 
 TASK:
-- Type: {task.taskType.name}
-- Description: {task.description}
-- Reward: {task.reward} wei
+- Type: {_task_type_name(task)}
+- Description: {_task_description(task)}
+- Reward: {_task_reward_wei(task)} wei
 
 WORKER:
 - Address: {worker_address}
@@ -213,8 +244,8 @@ Provide your assessment in JSON format:
 
 TASK:
 - ID: {task.id}
-- Type: {task.taskType.name}
-- Description: {task.description}
+- Type: {_task_type_name(task)}
+- Description: {_task_description(task)}
 - Required Outcome: {proposed_outcome}
 
 WORKER SUBMISSION:
@@ -262,7 +293,7 @@ Analyze the completion and provide verification in JSON format:
             List of (task_id, priority_score, reasoning)
         """
         tasks_summary = "\n".join([
-            f"- Task {t.id}: {t.taskType.name} - {t.description[:50]}... (Reward: {t.reward} wei)"
+            f"- Task {t.id}: {_task_type_name(t)} - {_task_description(t)[:50]}... (Reward: {_task_reward_wei(t)} wei)"
             for t in available_tasks[:10]  # Limit to avoid token limits
         ])
         
@@ -418,9 +449,9 @@ Provide a helpful, concise response. If asked about specific data, reference the
         """Fallback analysis when LLM fails"""
         return {
             "complexity": "medium",
-            "required_skills": [task.taskType.name],
+            "required_skills": [_task_type_name(task)],
             "estimated_time": 1.0,
             "risk_level": "medium",
-            "recommended_reward": float(task.reward) / 1e18,
+            "recommended_reward": float(_task_reward_wei(task)) / 1e18,
             "reasoning": "Fallback analysis - LLM unavailable"
         }

@@ -1,4 +1,6 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) 
+  || (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) 
+  || 'http://localhost:8000';
 
 export interface TreasuryData {
     balance: {

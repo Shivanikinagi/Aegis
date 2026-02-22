@@ -177,11 +177,15 @@ class StrategyLearner:
         task_id: int,
         task_type: int,
         max_payment: float,
-        available_workers: List[str]
+        available_workers: List[str],
+        ai_scores: Optional[Dict[str, float]] = None
     ) -> Optional[Decision]:
         """
         Make a decision about which worker to assign and how much to pay.
         This is the main learning algorithm entry point.
+        
+        Args:
+            ai_scores: Optional dict of {worker_address: ai_match_score} from LLM analysis
         """
         if not available_workers:
             logger.warning("No available workers for task", task_id=task_id)
@@ -203,7 +207,31 @@ class StrategyLearner:
                 self.memory.workers,
                 task_type
             )
-            reasoning = f"Exploitation: UCB1 score-based selection (confidence: {confidence:.2f})"
+            
+            # If AI scores are available, blend with UCB1 selection
+            if ai_scores and selected_worker in ai_scores:
+                ai_score = ai_scores[selected_worker]
+                # Weighted blend: 60% UCB1 + 40% AI
+                blended_confidence = 0.6 * confidence + 0.4 * ai_score
+                
+                # Check if AI strongly prefers a different worker
+                best_ai_worker = max(ai_scores, key=ai_scores.get) if ai_scores else None
+                if (best_ai_worker and best_ai_worker != selected_worker and 
+                    ai_scores.get(best_ai_worker, 0) > ai_scores.get(selected_worker, 0) + 0.3):
+                    # AI strongly prefers another worker — switch if confidence is reasonable
+                    if ai_scores[best_ai_worker] > 0.7:
+                        selected_worker = best_ai_worker
+                        confidence = ai_scores[best_ai_worker]
+                        reasoning = f"AI-enhanced: LLM preferred worker (AI score: {confidence:.2f})"
+                    else:
+                        confidence = blended_confidence
+                        reasoning = f"Hybrid: UCB1+AI blended selection (confidence: {confidence:.2f})"
+                else:
+                    confidence = blended_confidence
+                    reasoning = f"Hybrid: UCB1+AI blended selection (confidence: {confidence:.2f})"
+            else:
+                reasoning = f"Exploitation: UCB1 score-based selection (confidence: {confidence:.2f})"
+            
             logger.debug("Exploitation decision", task_id=task_id, worker=selected_worker[:10])
         
         # Get worker data

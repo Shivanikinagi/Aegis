@@ -1,5 +1,16 @@
 import { ethers } from 'ethers';
 
+// Network configuration - supports both Monad testnet and localhost
+const MONAD_TESTNET_RPC = 'https://testnet-rpc.monad.xyz';
+const MONAD_TESTNET_CHAIN_ID = 10143;
+const MONAD_EXPLORER_BASE = 'https://testnet.monadvision.com';
+const LOCALHOST_RPC = 'http://127.0.0.1:8545';
+
+// Detect network from environment or default to Monad testnet
+const NETWORK = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_NETWORK) || 'monad-testnet';
+const RPC_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_RPC_URL) 
+  || (NETWORK === 'localhost' ? LOCALHOST_RPC : MONAD_TESTNET_RPC);
+
 const TREASURY_ABI = [
   "function getBalance() view returns (uint256 total, uint256 available, uint256 reserved)",
   "function getDailySpending() view returns (uint256 spent, uint256 remaining)",
@@ -20,10 +31,27 @@ let deploymentAddresses: any = null;
 
 async function loadDeploymentAddresses() {
   if (deploymentAddresses) return deploymentAddresses;
-
+  
   try {
-    const response = await fetch('/contracts/deployments/localhost.json');
-    deploymentAddresses = await response.json();
+    // Load deployment addresses based on network
+    const deploymentFile = NETWORK === 'localhost' 
+      ? '/contracts/deployments/localhost.json'
+      : '/contracts/deployments/monad-testnet.json';
+    
+    const response = await fetch(deploymentFile);
+    if (!response.ok) {
+      // Fallback: try the other deployment file
+      const fallbackFile = NETWORK === 'localhost'
+        ? '/contracts/deployments/monad-testnet.json'
+        : '/contracts/deployments/localhost.json';
+      const fallbackResponse = await fetch(fallbackFile);
+      const data = await fallbackResponse.json();
+      // Handle nested format: { contracts: { Treasury: "0x..." } }
+      deploymentAddresses = data.contracts || data;
+    } else {
+      const data = await response.json();
+      deploymentAddresses = data.contracts || data;
+    }
     return deploymentAddresses;
   } catch (error) {
     console.error('Failed to load deployment addresses:', error);
@@ -32,13 +60,27 @@ async function loadDeploymentAddresses() {
 }
 
 export async function getProvider() {
-  return new ethers.JsonRpcProvider('http://127.0.0.1:8545');
+  return new ethers.JsonRpcProvider(RPC_URL);
+}
+
+export function getExplorerUrl(type: 'tx' | 'address' | 'block' | 'token', identifier: string): string {
+  return `${MONAD_EXPLORER_BASE}/${type}/${identifier}`;
+}
+
+export function getNetworkInfo() {
+  return {
+    network: NETWORK,
+    rpcUrl: RPC_URL,
+    chainId: NETWORK === 'localhost' ? 31337 : MONAD_TESTNET_CHAIN_ID,
+    explorerBase: MONAD_EXPLORER_BASE,
+    isTestnet: NETWORK === 'monad-testnet',
+  };
 }
 
 export async function getTreasuryContract() {
   const addresses = await loadDeploymentAddresses();
   if (!addresses) throw new Error('Deployment addresses not found');
-
+  
   const provider = await getProvider();
   return new ethers.Contract(addresses.Treasury, TREASURY_ABI, provider);
 }
@@ -46,7 +88,7 @@ export async function getTreasuryContract() {
 export async function getTaskRegistryContract() {
   const addresses = await loadDeploymentAddresses();
   if (!addresses) throw new Error('Deployment addresses not found');
-
+  
   const provider = await getProvider();
   return new ethers.Contract(addresses.TaskRegistry, TASK_REGISTRY_ABI, provider);
 }
@@ -54,7 +96,7 @@ export async function getTaskRegistryContract() {
 export async function getWorkerRegistryContract() {
   const addresses = await loadDeploymentAddresses();
   if (!addresses) throw new Error('Deployment addresses not found');
-
+  
   const provider = await getProvider();
   return new ethers.Contract(addresses.WorkerRegistry, WORKER_REGISTRY_ABI, provider);
 }
@@ -74,10 +116,10 @@ export async function getTreasuryData() {
   try {
     const contract = await getTreasuryContract();
     const addresses = await loadDeploymentAddresses();
-
+    
     const balance = await contract.getBalance();
     const daily = await contract.getDailySpending();
-
+    
     return {
       balance: {
         total: Number(ethers.formatEther(balance.total)),
@@ -101,7 +143,7 @@ export async function getTasks() {
     const contract = await getTaskRegistryContract();
     const count = await contract.taskCount();
     const tasks = [];
-
+    
     for (let i = 0; i < Number(count); i++) {
       const task = await contract.getTask(i);
       tasks.push({
@@ -118,9 +160,9 @@ export async function getTasks() {
         verificationRule: task.verificationRule
       });
     }
-
+    
     const openCount = tasks.filter(t => t.status === 'CREATED' || t.status === 'ASSIGNED').length;
-
+    
     return { tasks, total: tasks.length, openCount };
   } catch (error) {
     console.error('Error fetching tasks:', error);
@@ -133,13 +175,13 @@ export async function getWorkers() {
     const contract = await getWorkerRegistryContract();
     const addresses = await contract.getActiveWorkers();
     const workers = [];
-
+    
     for (const addr of addresses) {
       const worker = await contract.getWorker(addr);
-      const successRate = Number(worker.totalTasks) > 0
-        ? Number(worker.successfulTasks) / Number(worker.totalTasks)
+      const successRate = Number(worker.totalTasks) > 0 
+        ? Number(worker.successfulTasks) / Number(worker.totalTasks) 
         : 0;
-
+        
       workers.push({
         address: addr,
         isActive: worker.isActive,
@@ -152,7 +194,7 @@ export async function getWorkers() {
         allowedTaskTypes: worker.allowedTaskTypes.map((t: any) => Number(t))
       });
     }
-
+    
     return { workers };
   } catch (error) {
     console.error('Error fetching workers:', error);
@@ -175,9 +217,4 @@ export function formatTimestamp(timestamp: number): string {
 
 export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
-}
-
-export function getExplorerLink(addressOrHash: string, type: 'address' | 'tx' = 'address'): string {
-  const baseUrl = 'https://testnet.monadvision.com';
-  return `${baseUrl}/${type}/${addressOrHash}`;
 }

@@ -58,3 +58,8 @@ private_keys/
 
 #Ignore vscode AI rules
 .github\instructions\codacy.instructions.md
+
+# Markdown files (except README.md files)
+*.md
+!README.md
+!**/README.md
